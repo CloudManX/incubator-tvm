@@ -94,8 +94,13 @@ bool NMSRel(const Array<Type>& types,
 
   // assign output type
   if (param->return_indices) {
+    std::vector<Type> fields;
+    // dynamic happens for return_indices in TensorFlow & ONNX
     std::vector<IndexExpr> oshape({dshape[0], dshape[1]});
-    reporter->Assign(types[2], TensorTypeNode::make(oshape, Int(32)));
+    fields.push_back(TensorTypeNode::make(oshape, Int(32)));
+    std::vector<IndexExpr> countshape({dshape[0], 1});
+    fields.push_back(TensorTypeNode::make(countshape, Int(32)));
+    reporter->Assign(types[2], TupleTypeNode::make(Array<Type>(fields)));
   } else {
     reporter->Assign(types[2], TensorTypeNode::make(dshape, data->dtype));
   }
@@ -106,6 +111,7 @@ bool NMSRel(const Array<Type>& types,
 Expr MakeNMS(Expr data,
              Expr valid_count,
              int max_output_size,
+             double score_threshold,
              double iou_threshold,
              bool force_suppress,
              int top_k,
@@ -116,6 +122,7 @@ Expr MakeNMS(Expr data,
              bool invalid_to_bottom) {
   auto attrs = make_node<NonMaximumSuppressionAttrs>();
   attrs->max_output_size = max_output_size;
+  attrs->score_threshold = score_threshold;
   attrs->iou_threshold = iou_threshold;
   attrs->force_suppress = force_suppress;
   attrs->top_k = top_k;
@@ -135,8 +142,9 @@ TVM_REGISTER_API("relay.op.vision._make.non_max_suppression")
 
 RELAY_REGISTER_OP("vision.non_max_suppression")
 .describe(R"doc(Non-maximum suppression. The input boxes should
-be in the format of [class_id, score, left, top, right, bottom].
-Set id_index to be -1 to ignore class_id axis.
+be in the format of [class_id, score, left, top, right, bottom]
+or [score, left, top, right, bottom]. Set id_index to be -1 to
+ignore class_id axis.
 )doc" TVM_ADD_FILELINE)
 .set_num_inputs(2)
 .add_argument("data", "Tensor", "Input data.")

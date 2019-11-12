@@ -22,6 +22,7 @@ import topi
 from topi.util import get_const_int, get_const_float, get_float_tuple
 from .. import op as reg
 from ..op import OpPattern
+from ....hybrid import script
 
 
 @reg.register_schedule("vision.multibox_prior")
@@ -99,10 +100,11 @@ def schedule_nms(_, outs, target):
 
 
 @reg.register_compute("vision.non_max_suppression")
-def compute_nms(attrs, inputs, _, target):
+def compute_nms(attrs, inputs, output_type, target):
     """Compute definition of nms"""
     return_indices = bool(get_const_int(attrs.return_indices))
     max_output_size = get_const_int(attrs.max_output_size)
+    score_threshold = get_const_float(attrs.score_threshold)
     iou_threshold = get_const_float(attrs.iou_threshold)
     force_suppress = bool(get_const_int(attrs.force_suppress))
     top_k = get_const_int(attrs.top_k)
@@ -110,12 +112,22 @@ def compute_nms(attrs, inputs, _, target):
     score_index = get_const_int(attrs.score_index)
     id_index = get_const_int(attrs.id_index)
     invalid_to_bottom = bool(get_const_int(attrs.invalid_to_bottom))
-    return [
-        topi.vision.non_max_suppression(inputs[0], inputs[1], max_output_size,
-                                        iou_threshold, force_suppress, top_k,
-                                        coord_start, score_index, id_index,
-                                        return_indices, invalid_to_bottom)
-    ]
+
+    ret = topi.vision.non_max_suppression(inputs[0],
+                                          inputs[1],
+                                          max_output_size,
+                                          score_threshold,
+                                          iou_threshold,
+                                          force_suppress,
+                                          top_k,
+                                          coord_start,
+                                          score_index,
+                                          id_index,
+                                          return_indices,
+                                          invalid_to_bottom)
+    return list(ret) if return_indices else [ret]
+
 
 
 reg.register_pattern("vision.non_max_suppression", OpPattern.OPAQUE)
+

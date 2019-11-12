@@ -161,7 +161,7 @@ def get_const_tuple(in_tuple):
         if isinstance(elem, tvm.expr.Var):
             ret.append(elem)
         elif not isinstance(elem, (tvm.expr.IntImm, tvm.expr.UIntImm, int)):
-            elem = tvm.ir_pass.Simplify(elem)
+            elem = tvm.ir_pass.Simplify(elem) if isinstance(elem, Integral) else 1
             if not isinstance(elem, (tvm.expr.IntImm, tvm.expr.UIntImm)):
                 ret.append(elem)
         else:

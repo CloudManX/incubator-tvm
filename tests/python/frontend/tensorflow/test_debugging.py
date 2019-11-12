@@ -28,7 +28,7 @@ def run_relay(graph, *vars):
 def test_assert_true():
     g = tf.Graph()
     with g.as_default():
-        x = tf.placeholder(tf.float32, shape=())
+        x = tf.compat.v1.placeholder(tf.float32, shape=())
         assert_op = tf.Assert(tf.less_equal(x, x), ["it failed"])
 
         with tf.Session() as sess:
@@ -49,7 +49,7 @@ def test_assert_true():
 def test_assert_true_var_capture():
     g = tf.Graph()
     with g.as_default():
-        x = tf.placeholder(tf.float32, shape=())
+        x = tf.compat.v1.placeholder(tf.float32, shape=())
 
         # It turns out that tf.assert() creates a large and complex subgraph if
         # you capture a variable as part of the error message. So we need to
