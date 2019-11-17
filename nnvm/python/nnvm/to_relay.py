@@ -244,7 +244,11 @@ def _strided_slice(children, attrs, odtype='float32'):
     begin = attrs.get_int_list('begin')
     end = attrs.get_int_list('end')
     strides = attrs.get_int_list('stride', None)
-    return op.strided_slice(children[0], begin, end, strides=strides)
+    strides = [1] * len(begin) if strides is None else strides
+    return op.strided_slice(children[0],
+                            expr.const(list(begin), "int32"),
+                            expr.const(list(end), "int32"),
+                            strides=expr.const(list(strides), "int32"))
 
 
 def _split(children, attrs, odtype='float32'):

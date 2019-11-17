@@ -1621,7 +1621,9 @@ def _test_forward_nms_v3(bx_shape, score_shape, iou_threshold, score_threshold, 
                                  max_output_size=out_size, iou_threshold=iou_threshold,
                                  score_threshold=score_threshold, name="nms")
     compare_tf_with_tvm([boxes, scores], ['in_data_1:0', 'in_data_2:0'],
-                        'nms/NonMaxSuppressionV3:0', no_gpu=True, mode='vm')
+                        'nms/NonMaxSuppressionV3:0', mode='vm')
+    compare_tf_with_tvm([boxes, scores], ['in_data_1:0', 'in_data_2:0'],
+                        'nms/NonMaxSuppressionV3:0', mode='debug')
 
 def test_forward_nms_v3():
     """ NonMaxSuppressionV3 """

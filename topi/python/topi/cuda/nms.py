@@ -675,7 +675,7 @@ def invalid_to_bottom_ir(data, flag, idx, out):
 
 
 @non_max_suppression.register(["cuda", "gpu"])
-def non_max_suppression_gpu(data, valid_count, max_output_size=-1,
+def non_max_suppression_gpu(data, valid_count, indices, max_output_size=-1,
                             iou_threshold=0.5, force_suppress=False, top_k=-1,
                             coord_start=2, score_index=1, id_index=0,
                             return_indices=True, invalid_to_bottom=False):
@@ -690,6 +690,9 @@ def non_max_suppression_gpu(data, valid_count, max_output_size=-1,
 
     valid_count : tvm.Tensor
         1-D tensor for valid number of boxes.
+
+    indices : tvm.Tensor
+        2-D tensor with shape [batch_size, num_anchors].
 
     max_output_size : optional, int
         Max number of output valid boxes for each instance.
