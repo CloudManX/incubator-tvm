@@ -2013,7 +2013,7 @@ Array<Array<Layout> > StridedSliceInferCorrectLayout(
 
   auto layout = old_in_layouts[0];
   if (layout.defined() && new_in_layouts.defined()) {
-    CHECK_EQ(new_in_layouts.size(), 1);
+    CHECK_GE(new_in_layouts.size(), 1);
     auto new_layout = new_in_layouts[0];
     auto shape = old_in_shapes[0];
 
@@ -2070,9 +2070,25 @@ Array<Array<Layout> > StridedSliceInferCorrectLayout(
         new_end.push_back(tvm::Integer(ed / factor));
       }
     }
+
     layout = new_layout;
+
+    DLContext ctx;
+    ctx.device_type = kDLCPU;
+    ctx.device_id = 0;
+    auto begin_ndarray = runtime::NDArray::Empty({int64_t(new_begin.size())}, Type2TVMType(Int(64)), ctx);
+    auto end_ndarray = runtime::NDArray::Empty({int64_t(new_begin.size())}, Type2TVMType(Int(64)), ctx);
+    auto strides_ndarray = runtime::NDArray::Empty({int64_t(new_begin.size())}, Type2TVMType(Int(64)), ctx);
+    int64_t* begin_data = static_cast<int64_t*>(begin_ndarray->data);
+    int64_t* end_data = static_cast<int64_t*>(end_ndarray->data);
+    for (size_t i = 0; i < new_begin.size(); ++i) {
+      begin_data[i] = new_begin[i];
+      end_data[i] = new_end[i];
+    }
+    params->begin = ConstantNode::make(begin_ndarray);
+    params->end = ConstantNode::make(end_ndarray);
   }
-  return {{layout}, {layout}};
+  return {{layout, Layout("C"), Layout("C"), Layout("C")}, {layout}};
 }
 
 inline Tensor DynamicStridedSlice(const tvm::Tensor& input,

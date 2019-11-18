@@ -191,9 +191,9 @@ class ParallelConv2DCombiner : public ParallelOpCombiner {
       DLContext ctx;
       ctx.device_type = kDLCPU;
       ctx.device_id = 0;
-      auto begin_ndarray = runtime::NDArray::Empty({1}, Type2TVMType(Int(64)), ctx);
-      auto end_ndarray = runtime::NDArray::Empty({1}, Type2TVMType(Int(64)), ctx);
-      auto strides_ndarray = runtime::NDArray::Empty({1}, Type2TVMType(Int(64)), ctx);
+      auto begin_ndarray = runtime::NDArray::Empty({int64_t(begin.size())}, Type2TVMType(Int(64)), ctx);
+      auto end_ndarray = runtime::NDArray::Empty({int64_t(begin.size())}, Type2TVMType(Int(64)), ctx);
+      auto strides_ndarray = runtime::NDArray::Empty({int64_t(begin.size())}, Type2TVMType(Int(64)), ctx);
       int64_t* begin_data = static_cast<int64_t*>(begin_ndarray->data);
       int64_t* end_data = static_cast<int64_t*>(end_ndarray->data);
 
