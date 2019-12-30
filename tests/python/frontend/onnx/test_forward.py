@@ -1028,6 +1028,57 @@ def test_forward_arg_min_max():
             verify_argmin([3, 4, 4], axis, keepdims)
             verify_argmax([3, 4, 4], axis, keepdims)
 
+def _test_forward_nms(box_shape, score_shape, iou_threshold, score_threshold, out_size, dtype='float32'):
+    boxes = np.random.uniform(1, 10, size=box_shape).astype(dtype)
+    scores = np.random.uniform(size=score_shape).astype(dtype)
+    dummy = np.array([1])
+
+
+    max_output_boxes_per_class_node = helper.make_node('ConstantOfShape', ['mobpc_in'], ['mobpc_out'],
+                                 value=helper.make_tensor(
+                                     'max_output_boxes_per_class',
+                                     mapping.NP_TYPE_TO_TENSOR_TYPE[np.dtype('int64')],
+                                     (1, ), (20, )))
+
+    iou_thresh_node = helper.make_node("ConstantOfShape", ['iou_in'], ['iou_out'],
+                                 value=helper.make_tensor(
+                                     'iou_threshold',
+                                     mapping.NP_TYPE_TO_TENSOR_TYPE[np.dtype(dtype)],
+                                     (1, ), (iou_threshold, )))
+
+    score_thresh_node = helper.make_node("ConstantOfShape", ['score_in'], ['score_out'],
+                                 value=helper.make_tensor(
+                                     'score_threshold',
+                                     mapping.NP_TYPE_TO_TENSOR_TYPE[np.dtype(dtype)],
+                                     (1, ), (score_threshold, )))
+
+    nms_node = helper.make_node('NonMaxSuppression', ['boxes', 'scores', 'mobpc_out', 'iou_out',
+                                                      'score_out'],
+                                                ['selected_indices'])
+
+    graph = helper.make_graph([max_output_boxes_per_class_node, iou_thresh_node, score_thresh_node, nms_node],
+                              'nms_test',
+                              inputs=[helper.make_tensor_value_info('boxes',
+                                                                    TensorProto.FLOAT, list(box_shape)),
+                                      helper.make_tensor_value_info('scores',
+                                                                    TensorProto.FLOAT, list(score_shape)),
+                                      helper.make_tensor_value_info('mobpc_in',
+                                                                    TensorProto.INT64, None),
+                                      helper.make_tensor_value_info('iou_in',
+                                                                    TensorProto.INT64, None),
+                                      helper.make_tensor_value_info('score_in',
+                                                                    TensorProto.INT64, None),
+                                      ],
+                              outputs=[helper.make_tensor_value_info('selected_indices',
+                                                                     TensorProto.INT64, None)]
+                              )
+    model = helper.make_model(graph, producer_name='nms_test')
+    # onnx.save(model, 'nms.onnx')
+    for target, ctx in ctx_list():
+        tvm_out = get_tvm_output(model, [boxes, scores, dummy, dummy, dummy], target, ctx)
+
+def test_forward_nms():
+    _test_forward_nms((1, 5, 4), (1, 3, 5), 0.7, 0.5, 5)
 
 def verify_constantofshape(input_dim, value, dtype):
     out = np.empty(shape=input_dim, dtype=dtype)
@@ -1708,54 +1759,55 @@ def test_or():
 
 if __name__ == '__main__':
     test_flatten()
-    test_reshape()
-    test_shape()
-    test_power()
-    test_squeeze()
-    test_unsqueeze()
-    test_slice()
-    test_floor()
-    test_ceil()
-    test_clip()
-    test_onehot()
-    test_matmul()
-    test_batch_matmul()
-    test_gather()
-    test_lrn()
-    test_instance_norm()
-    test_upsample()
-    test_forward_min()
-    test_forward_max()
-    test_forward_mean()
-    test_forward_hardsigmoid()
-    test_forward_arg_min_max()
-    test_softmax()
-    test_constantofshape()
-    test_reduce_max()
-    test_reduce_min()
-    test_reduce_sum()
-    test_reduce_mean()
-    test_pad()
-    test_split()
-    test_binary_ops()
-    test_single_ops()
-    test_leaky_relu()
-    test_elu()
-    test_selu()
-    test_ThresholdedRelu()
-    test_ScaledTanh()
-    test_ParametricSoftplus()
-    test_Scale()
-    test_LogSoftmax()
-    test_resnet()
-    test_inception()
-    test_densenet()
-    test_sign()
-    test_not()
-    test_and()
-    test_tile()
-    test_erf()
-    test_where()
-    test_or()
-    test_depth_to_space()
-    test_space_to_depth()
+    # test_reshape()
+    # test_shape()
+    # test_power()
+    # test_squeeze()
+    # test_unsqueeze()
+    # test_slice()
+    # test_floor()
+    # test_ceil()
+    # test_clip()
+    # test_onehot()
+    # test_matmul()
+    # test_batch_matmul()
+    # test_gather()
+    # test_lrn()
+    # test_instance_norm()
+    # test_upsample()
+    # test_forward_min()
+    # test_forward_max()
+    # test_forward_mean()
+    # test_forward_hardsigmoid()
+    # test_forward_arg_min_max()
+    test_forward_nms()
+    # test_softmax()
+    # test_constantofshape()
+    # test_reduce_max()
+    # test_reduce_min()
+    # test_reduce_sum()
+    # test_reduce_mean()
+    # test_pad()
+    # test_split()
+    # test_binary_ops()
+    # test_single_ops()
+    # test_leaky_relu()
+    # test_elu()
+    # test_selu()
+    # test_ThresholdedRelu()
+    # test_ScaledTanh()
+    # test_ParametricSoftplus()
+    # test_Scale()
+    # test_LogSoftmax()
+    # test_resnet()
+    # test_inception()
+    # test_densenet()
+    # test_sign()
+    # test_not()
+    # test_and()
+    # test_tile()
+    # test_erf()
+    # test_where()
+    # test_or()
+    # test_depth_to_space()
+    # test_space_to_depth()

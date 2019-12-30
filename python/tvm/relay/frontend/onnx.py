@@ -26,7 +26,7 @@ from .. import expr as _expr
 from .. import module as _module
 from .. import op as _op
 from .common import AttrCvt, Renamer
-from .common import get_relay_op, new_var, infer_shape, infer_channels
+from .common import get_relay_op, new_var, infer_shape, infer_channels, infer_type
 from .common import infer_type, infer_value, infer_value_simulated, get_name
 
 __all__ = ['from_onnx']
@@ -121,6 +121,7 @@ class Elemwise(OnnxOpConverter):
 
     @classmethod
     def _impl_v1(cls, inputs, attr, params):
+        print('mul, mul, mul')
         assert len(inputs) == 2, "Math op take 2 inputs, {} given".format(
             len(inputs))
         op_name = cls.name
@@ -802,9 +803,22 @@ class Slice(OnnxOpConverter):
                     starts, ends, axes)
                 starts = new_starts
                 ends = new_ends
-        return _op.strided_slice(inputs[0],
+
+        input_shape = np.array(list(infer_shape(inputs[0])))
+        ends = np.minimum(ends, input_shape[:len(ends)])
+
+        ss = _op.strided_slice(inputs[0],
                                  begin=_expr.const(starts, dtype="int32"),
                                  end=_expr.const(ends, dtype="int32"))
+        # print()
+        # print('start and end:')
+        # print(starts, ends)
+        # print('tensor shape:')
+        # print(infer_type(ss).checked_type)
+        # print()
+
+        return ss
+
 
 
 class Gather(OnnxOpConverter):
@@ -1083,6 +1097,55 @@ class Or(Elemwise):
     def _impl_v7(cls, inputs, attr, params):
         return _op.logical_or(inputs[0], inputs[1])
 
+class NMS(OnnxOpConverter):
+    """ Operator converter for NonMaxSuppression.
+    """
+    @classmethod
+    def _impl_v9(cls, inputs, attr, params):
+        boxes = inputs[0]
+        scores, indices = _op.topk(inputs[1], axis=1, ret_type='both')
+        scores_transposed = _op.transpose(scores, [0, 2, 1])
+        indices_transposed = _op.transpose(indices, [0, 2, 1]).astype('float32')
+        print('++++++++++++++++++++++++++++')
+        data = _op.concatenate([indices_transposed, scores_transposed, boxes], axis=-1)
+        print(infer_type(data).checked_type)
+
+        iou_threshold = 0.0
+        score_threshold = 0.0
+
+        if len(inputs) > 2:
+            max_output_size = inputs[2].args[0].data.asnumpy()[()]
+        if len(inputs) > 3:
+            iou_threshold = inputs[3].args[0].data.asnumpy()[()]
+        if len(inputs) > 4:
+            score_threshold = inputs[4].args[0].data.asnumpy()[()]
+
+        cnt, data, indices = _op.vision.get_valid_counts(data=data,
+                                                  score_threshold=score_threshold,
+                                                  id_index=-1,
+                                                  score_index=0)
+
+        nms_out = _op.vision.non_max_suppression(data=data,
+                                                 valid_count=cnt,
+                                                 indices=indices,
+                                                 max_output_size=max_output_size,
+                                                 iou_threshold=iou_threshold,
+                                                 force_suppress=True,
+                                                 top_k=-1,
+                                                 coord_start=1,
+                                                 score_index=0,
+                                                 id_index=-1,
+                                                 return_indices=False,
+                                                 invalid_to_bottom=True)
+        return nms_out
+
+class TopK(OnnxOpConverter):
+    """ Operator converter for NonMaxSuppression.
+    """
+    @classmethod
+    def _impl_v9(cls, inputs, attr, params):
+        return _op.topk(inputs[0])
+
 
 # compatible operators that do NOT require any conversion.
 _identity_list = []
@@ -1208,7 +1271,10 @@ def _get_convert_map(opset):
         'Tile': Tile.get_converter(opset),
         'Erf': Erf.get_converter(opset),
         'Where': Where.get_converter(opset),
-        'Or': Or.get_converter(opset)
+        'Or': Or.get_converter(opset),
+
+        'TopK': TopK.get_converter(opset),
+        'NonMaxSuppression': NMS.get_converter(opset)
     }
 
 
@@ -1326,6 +1392,7 @@ class GraphProto(object):
                 attr['tvm_custom']['name'] = i_name
 
                 op = self._convert_operator(op_name, inputs, attr, opset)
+                print(op_name, infer_type(op).checked_type)
                 node_output = self._fix_outputs(op_name, node.output)
                 if not isinstance(op, _expr.TupleWrapper):
                     outputs_num = 1
