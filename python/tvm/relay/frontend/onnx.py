@@ -1103,12 +1103,10 @@ class NMS(OnnxOpConverter):
     @classmethod
     def _impl_v9(cls, inputs, attr, params):
         boxes = inputs[0]
-        scores, indices = _op.topk(inputs[1], axis=1, ret_type='both')
+        scores, class_ids = _op.topk(inputs[1], axis=1, ret_type='both')
         scores_transposed = _op.transpose(scores, [0, 2, 1])
-        indices_transposed = _op.transpose(indices, [0, 2, 1]).astype('float32')
-        print('++++++++++++++++++++++++++++')
-        data = _op.concatenate([indices_transposed, scores_transposed, boxes], axis=-1)
-        print(infer_type(data).checked_type)
+        ids_transposed = _op.transpose(class_ids, [0, 2, 1]).astype('float32')
+        data = _op.concatenate([ids_transposed, scores_transposed, boxes], axis=-1)
 
         iou_threshold = 0.0
         score_threshold = 0.0
@@ -1125,7 +1123,7 @@ class NMS(OnnxOpConverter):
                                                   id_index=-1,
                                                   score_index=0)
 
-        nms_out = _op.vision.non_max_suppression(data=data,
+        box_indices, end = _op.vision.non_max_suppression(data=data,
                                                  valid_count=cnt,
                                                  indices=indices,
                                                  max_output_size=max_output_size,
@@ -1135,8 +1133,19 @@ class NMS(OnnxOpConverter):
                                                  coord_start=1,
                                                  score_index=0,
                                                  id_index=-1,
-                                                 return_indices=False,
+                                                 return_indices=True,
                                                  invalid_to_bottom=True)
+        end = _op.squeeze(end, axis=[1])
+        box_indices = _op.squeeze(box_indices, axis=[0])
+
+        selected_indices = _op.strided_slice(box_indices, _expr.const([0]), end, _expr.const([1]))
+        class_ids = _op.take(class_ids, selected_indices)
+
+        selected_indices = _op.expand_dims(selected_indices, axis=-1)
+        class_ids = _op.expand_dims(class_ids, axis=-1)
+
+        nms_out = _op.concatenate([class_ids, selected_indices], axis=-1)
+
         return nms_out
 
 class TopK(OnnxOpConverter):
