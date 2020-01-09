@@ -21,12 +21,46 @@ import torchvision
 import topi
 import topi.testing
 import tvm
+import onnxruntime
 from tvm import relay
 from tvm.contrib import graph_runtime
 from nnvm.testing.config import ctx_list
 import onnx
 from onnx import helper, TensorProto, mapping
 import scipy
+
+def vmobj_to_list(o):
+    if isinstance(o, tvm.relay.backend.vmobj.Tensor):
+        return [o.asnumpy().tolist()]
+    elif isinstance(o, tvm.relay.backend.vmobj.ADT):
+        result = []
+        for f in o:
+            result.extend(vmobj_to_list(f))
+        return result
+    elif isinstance(o, tvm.relay.backend.interpreter.TupleValue):
+        result = []
+        for f in o.fields:
+            result.append(vmobj_to_list(f))
+        return result
+    elif isinstance(o, tvm.relay.backend.interpreter.ConstructorValue):
+        if o.constructor.name_hint == 'Cons':
+            tl = vmobj_to_list(o.fields[1])
+            hd = vmobj_to_list(o.fields[0])
+            hd.extend(tl)
+            return hd
+        elif o.constructor.name_hint == 'Nil':
+            return []
+        elif 'tensor_nil' in o.constructor.name_hint:
+            return [0]
+        elif 'tensor' in o.constructor.name_hint:
+            return [o.fields[0].asnumpy()]
+        else:
+            raise RuntimeError("Unknown object type: %s" %
+                               o.constructor.name_hint)
+    elif isinstance(o, tvm.relay.backend.interpreter.TensorValue):
+        return [o.data.asnumpy()]
+    else:
+        raise RuntimeError("Unknown object type: %s" % type(o))
 
 
 def get_tvm_output(graph_def, input_data, target, ctx, output_shape=None, output_dtype='float32', opset=None):
@@ -46,11 +80,27 @@ def get_tvm_output(graph_def, input_data, target, ctx, output_shape=None, output
         dtype_dict = {input_names: input_data.dtype}
 
     mod, params = relay.frontend.from_onnx(graph_def, shape_dict, opset=opset)
+
+    mode = 'vm'
+    ex = relay.create_executor(mode, mod=mod, ctx=tvm.cpu(), target="llvm")
+    inputs = []
+    for param in mod['main'].params:
+        found = False
+        for i, n in input_names.items():
+            if n == param.name_hint:
+                found = True
+                inputs.append(tvm.nd.array(input_data[i]))
+                break
+        # Interpreter doesn't bind constants, so still need to find in params
+        if not found:
+            inputs.append(tvm.nd.array(params[param.name_hint]))
+    result = ex.evaluate()(*inputs)
+    return result.asnumpy()
+
     with relay.build_config(opt_level=1):
         graph, lib, params = relay.build(mod,
                                          target,
                                          params=params)
-
     ctx = tvm.cpu(0)
     m = graph_runtime.create(graph, lib, ctx)
     # set inputs
@@ -1028,11 +1078,11 @@ def test_forward_arg_min_max():
             verify_argmin([3, 4, 4], axis, keepdims)
             verify_argmax([3, 4, 4], axis, keepdims)
 
-def _test_forward_nms(box_shape, score_shape, iou_threshold, score_threshold, out_size, dtype='float32'):
-    boxes = np.random.uniform(1, 10, size=box_shape).astype(dtype)
+def _test_forward_nms(box_shape, score_shape, iou_threshold, score_threshold, dtype='float32'):
+    boxes = np.random.uniform(low=1.0, high=10.0, size=box_shape).astype(dtype)
     scores = np.random.uniform(size=score_shape).astype(dtype)
     dummy = np.array([1])
-
+    dummy_dim = dummy.shape
 
     max_output_boxes_per_class_node = helper.make_node('ConstantOfShape', ['mobpc_in'], ['mobpc_out'],
                                  value=helper.make_tensor(
@@ -1063,22 +1113,49 @@ def _test_forward_nms(box_shape, score_shape, iou_threshold, score_threshold, ou
                                       helper.make_tensor_value_info('scores',
                                                                     TensorProto.FLOAT, list(score_shape)),
                                       helper.make_tensor_value_info('mobpc_in',
-                                                                    TensorProto.INT64, None),
+                                                                    TensorProto.INT64, dummy.shape),
                                       helper.make_tensor_value_info('iou_in',
-                                                                    TensorProto.INT64, None),
+                                                                    TensorProto.INT64, dummy.shape),
                                       helper.make_tensor_value_info('score_in',
-                                                                    TensorProto.INT64, None),
+                                                                    TensorProto.INT64, dummy.shape),
                                       ],
                               outputs=[helper.make_tensor_value_info('selected_indices',
-                                                                     TensorProto.INT64, None)]
+                                                                     TensorProto.INT64, ['nbox', 3])],
+                              initializer=[
+                                    helper.make_tensor("mobpc_in", TensorProto.INT64, (len(dummy_dim), ),
+                                                        dummy_dim),
+                                    helper.make_tensor("iou_in", TensorProto.INT64, (len(dummy_dim), ),
+                                                        dummy_dim),
+                                    helper.make_tensor("score_in", TensorProto.INT64, (len(dummy_dim), ),
+                                                        dummy_dim),
+                              ]
                               )
     model = helper.make_model(graph, producer_name='nms_test')
-    # onnx.save(model, 'nms.onnx')
+    onnx.checker.check_model(model)
+    onnx.save(model, 'nms.onnx')
+
     for target, ctx in ctx_list():
-        tvm_out = get_tvm_output(model, [boxes, scores, dummy, dummy, dummy], target, ctx)
+        print('\n############## INPUT #################')
+        print("boxes: ")
+        print(boxes)
+        print("scores: ")
+        print(scores)
+        print("######################################\n")
+        tvm_out = get_tvm_output(model, [boxes, scores], target, ctx)
+        print("\n############## OUTPUT ################")
+        print(tvm_out)
+        print(tvm_out.shape)
+        print("######################################\n")
+        
+        print(boxes.shape)
+        print(scores.shape)
+        # onnx_out = get_onnxruntime_output(model=model, x=np.array([boxes, scores]))
+        # print("\n############## OUTPUT ################")
+        # print(onnx_out)
+        # print("######################################\n")
 
 def test_forward_nms():
-    _test_forward_nms((1, 5, 4), (1, 3, 5), 0.7, 0.5, 5)
+    _test_forward_nms((2, 5, 4), (2, 3, 5), 0.7, 0.5)
 
 def verify_constantofshape(input_dim, value, dtype):
     out = np.empty(shape=input_dim, dtype=dtype)
@@ -1758,7 +1835,7 @@ def test_or():
 
 
 if __name__ == '__main__':
-    test_flatten()
+    # test_flatten()
     # test_reshape()
     # test_shape()
     # test_power()

@@ -185,6 +185,33 @@ def get_valid_counts(data, score_threshold=0, id_index=0, score_index=1):
                                    id_index_const, score_index_const,
                                    tvm.const(1, data.dtype))
 
+@hybrid.script
+def hybrid_batch_to_index(box_indices, class_ids):
+    batch_size = box_indices.shape[0]
+    num_anchors = box_indices.shape[1]
+
+    out_tensor = output_tensor((batch_size * num_anchors, 3), box_indices.dtype)
+
+    out_idx = 0
+    for i in range(batch_size):
+        for j in range(num_anchors):
+            if box_indices[i, j] >= 0:
+                out_tensor[out_idx, 0] = i
+                out_tensor[out_idx, 1] = class_ids[i, j] 
+                out_tensor[out_idx, 2] = box_indices[i, j] 
+                out_idx += 1
+
+    for i in range(out_idx, batch_size*num_anchors):
+        out_tensor[i, 0] = -1
+        out_tensor[i, 1] = -1
+        out_tensor[i, 2] = -1
+
+    return out_tensor
+
+@tvm.target.generic_func
+def batch_to_index(box_indices, class_ids):
+    return hybrid_batch_to_index(box_indices, class_ids)     
+
 
 @hybrid.script
 def hybrid_nms(data, sorted_index, valid_count, indices, max_output_size,

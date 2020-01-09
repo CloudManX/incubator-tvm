@@ -89,6 +89,20 @@ def compute_get_valid_counts(attrs, inputs, _, target):
 
 reg.register_pattern("vision.get_valid_counts", OpPattern.OPAQUE)
 
+# Get counts of valid boxes
+@reg.register_schedule("vision.batch_to_index")
+def schedule_batch_to_index(_, outs, target):
+    """Schedule definition of batch_to_index"""
+    with target:
+        return topi.generic.schedule_batch_to_index(outs)
+
+
+@reg.register_compute("vision.batch_to_index")
+def compute_batch_to_index(attrs, inputs, _, target):
+    """Compute definition of batch_to_index"""
+    return [topi.vision.batch_to_index(inputs[0], inputs[1])]
+
+reg.register_pattern("vision.batch_to_index", OpPattern.OPAQUE)
 
 # non-maximum suppression
 @reg.register_schedule("vision.non_max_suppression")

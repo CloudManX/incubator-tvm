@@ -54,6 +54,8 @@ def get_valid_counts(data,
     return TupleWrapper(_make.get_valid_counts(data, score_threshold,
                                                id_index, score_index), 3)
 
+def batch_to_index(box_indices, class_id):
+    return _make.batch_to_index(box_indices, class_id)
 
 def non_max_suppression(data,
                         valid_count,

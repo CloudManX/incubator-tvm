@@ -121,7 +121,6 @@ class Elemwise(OnnxOpConverter):
 
     @classmethod
     def _impl_v1(cls, inputs, attr, params):
-        print('mul, mul, mul')
         assert len(inputs) == 2, "Math op take 2 inputs, {} given".format(
             len(inputs))
         op_name = cls.name
@@ -508,8 +507,7 @@ class DepthToSpace(OnnxOpConverter):
             # reorder to expand spatial blocks.
             transposed = _op.transpose(expanded, axes=(0, 1, 4, 2, 5, 3))
 
-        return AttrCvt(op_name="reshape",
-                       extras={'newshape': newshape},
+        return AttrCvt(op_name="reshape", extras={'newshape': newshape},
                        ignores=['mode', 'blocksize'])([transposed], attr)
 
 
@@ -688,7 +686,7 @@ class Shape(OnnxOpConverter):
     @classmethod
     def _impl_v1(cls, inputs, attr, params):
         # TODO(@jroesch): use shape_of once it has been fixed)
-        return _op.shape_of(inputs[0])
+        return _op.shape_of(inputs[0], dtype='int64')
 
 class Cast(OnnxOpConverter):
     """ Operator converter for Cast.
@@ -1122,7 +1120,9 @@ class NMS(OnnxOpConverter):
                                                   score_threshold=score_threshold,
                                                   id_index=-1,
                                                   score_index=0)
-
+        # data_shape = infer_shape(data)
+        # data = _op.reshape(data, [1, data_shape[0] * data_shape[1], data_shape[2]])
+        
         box_indices, end = _op.vision.non_max_suppression(data=data,
                                                  valid_count=cnt,
                                                  indices=indices,
@@ -1134,26 +1134,41 @@ class NMS(OnnxOpConverter):
                                                  score_index=0,
                                                  id_index=-1,
                                                  return_indices=True,
-                                                 invalid_to_bottom=True)
-        end = _op.squeeze(end, axis=[1])
-        box_indices = _op.squeeze(box_indices, axis=[0])
+                                                 invalid_to_bottom=True     
+                                                 )
+        class_ids = _op.squeeze(class_ids, axis=[1])
+        nms_out = _op.vision.batch_to_index(box_indices, class_ids).astype('int64')
+                
 
-        selected_indices = _op.strided_slice(box_indices, _expr.const([0]), end, _expr.const([1]))
-        class_ids = _op.take(class_ids, selected_indices)
+        end_sum = _op.squeeze(_op.sum(end, keepdims=True), axis=[0])
+        end_sum = _op.concatenate([end_sum, _expr.const([3])], axis=0)
 
-        selected_indices = _op.expand_dims(selected_indices, axis=-1)
-        class_ids = _op.expand_dims(class_ids, axis=-1)
+        sliced_nms_out = _op.strided_slice(nms_out, _expr.const([0, 0]), end_sum, _expr.const([1, 1]))
+        # data_slice = get_relay_op("squeeze")(box_indices, axis=[0])
 
-        nms_out = _op.concatenate([class_ids, selected_indices], axis=-1)
 
-        return nms_out
+        # selected_indices = get_relay_op("strided_slice")(data_slice, _expr.const([0]), end, _expr.const([1]))
+        # class_shape = infer_shape(class_ids)
+        # class_ids = _op.transpose(class_ids, [0,2,1])
+
+        # class_ids_with_batch = _op.vision.batch_to_index(class_ids)
+        # # class_ids_with_batch = _op.take(class_ids_with_batch, selected_indices, axis=0)
+
+        # selected_indices = _op.expand_dims(selected_indices, axis=-1)
+        # nms_out = _op.concatenate([class_ids_with_batch, selected_indices], axis=-1)
+        # nms_out = 
+
+        return sliced_nms_out       
 
 class TopK(OnnxOpConverter):
     """ Operator converter for NonMaxSuppression.
     """
     @classmethod
     def _impl_v9(cls, inputs, attr, params):
-        return _op.topk(inputs[0])
+        axis = int(attr.get('axis', 0))
+        k = inputs[1]
+        print(infer_type(k).checked_type)
+        return _op.topk(inputs[0], axis=axis, ret_type='both')
 
 
 # compatible operators that do NOT require any conversion.
@@ -1388,8 +1403,9 @@ class GraphProto(object):
                 self._num_param += 1
                 # We should convert scalar integers to int32, to normalize.
                 array = self._parse_array(t_proto)
-                if len(array.shape) == 0 and array.dtype == 'int64':
-                    array = _nd.array(array.asnumpy().astype('int32'))
+                # if len(array.shape) == 0 and array.dtype == 'int64':
+                #     array = _nd.array(array.asnumpy().astype('int32'))
+                array = _nd.array(array.asnumpy().astype(array.dtype))
                 self._params[node.output[0]] = array
                 self._nodes[node.output[0]] = new_var(
                     node.output[0],

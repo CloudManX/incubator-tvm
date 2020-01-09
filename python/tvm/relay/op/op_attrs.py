@@ -237,6 +237,11 @@ class GetValidCountsAttrs(Attrs):
 
 
 @register_relay_attr_node
+class BatchToIndexAttrs(Attrs):
+    """Attributes for vision.batch_to_index"""
+
+
+@register_relay_attr_node
 class NonMaximumSuppressionAttrs(Attrs):
     """Attributes for vision.non_maximum_suppression"""
 

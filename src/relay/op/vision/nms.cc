@@ -155,5 +155,52 @@ ignore class_id axis.
 .set_support_level(5)
 .add_type_rel("NMS", NMSRel);
 
+
+
+TVM_REGISTER_NODE_TYPE(BatchToIndexAttrs);
+
+bool BatchToIndexRel(const Array<Type>& types,
+                      int num_inputs,
+                      const Attrs& attrs,
+                      const TypeReporter& reporter) {
+  CHECK_EQ(types.size(), 3);
+  const auto* box_indices = types[0].as<TensorTypeNode>();
+  const auto* class_ids = types[1].as<TensorTypeNode>();
+
+  const auto& bshape = box_indices->shape;
+  const auto& cshape = class_ids->shape;
+
+  CHECK_EQ(bshape.size(), 2) << "Box indices should be 2-D.";
+  CHECK_EQ(cshape.size(), 2) << "Class IDs should be 2-D.";
+
+  std::vector<IndexExpr> oshape;
+  
+  oshape.push_back(bshape[0]*bshape[1]);
+  oshape.push_back(3);
+
+  // assign output type
+  reporter->Assign(types[2], TensorTypeNode::make(oshape, box_indices->dtype));
+  return true;
+}
+
+Expr MakeBatchToIndex(Expr box_indices, Expr class_ids) {
+  auto attrs = make_node<BatchToIndexAttrs>();
+  static const Op& op = Op::Get("vision.batch_to_index");
+  return CallNode::make(op, {box_indices, class_ids}, Attrs(attrs), {});
+}
+
+
+TVM_REGISTER_API("relay.op.vision._make.batch_to_index")
+.set_body_typed(MakeBatchToIndex);
+
+
+RELAY_REGISTER_OP("vision.batch_to_index")
+.describe(R"doc(wdnmdonnx)doc" TVM_ADD_FILELINE)
+.set_num_inputs(2)
+.add_argument("box_indices", "Tensor", "box indices from nms")
+.add_argument("class_ids", "Tensor", "class ids correspond to box indices")
+.set_support_level(5)
+.add_type_rel("BatchToIndex", BatchToIndexRel);
+
 }  // namespace relay
 }  // namespace tvm
