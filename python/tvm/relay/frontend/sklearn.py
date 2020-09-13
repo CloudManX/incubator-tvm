@@ -313,22 +313,26 @@ def from_sklearn(model,
 
     return IRModule.from_expr(func), []
 
-# def from_auto_ml(model,
-#               shape=None,
-#               dtype="float32"):
-#     print('running sklearn frontend......................................')
+def from_auto_ml(model,
+              shape=None,
+              dtype="float32"):
+    print('running sklearn frontend......................................')
 
-#     try:
-#         import sklearn
-#     except ImportError:
-#         pass
+    try:
+        import sklearn
+    except ImportError:
+        pass
 
-#     inexpr = _expr.var('input', shape=shape, dtype=dtype)
-#     outexpr = sklearn_op_to_relay(model, inexpr, shape, dtype)
 
-#     func = _function.Function(analysis.free_vars(outexpr), outexpr)
+    print(model.feature_transformer.steps[0])
+    print(model.feature_transformer.steps[1])
+    print(model.target_transformer)
+    # inexpr = _expr.var('input', shape=shape, dtype=dtype)
+    # outexpr = sklearn_op_to_relay(model, inexpr, shape, dtype)
 
-#     return IRModule.from_expr(func), []
+    # func = _function.Function(analysis.free_vars(outexpr), outexpr)
+    return 
+    # return IRModule.from_expr(func), []
 
 
     
