@@ -45,11 +45,13 @@ from .common import infer_value_simulated as _infer_value_simulated
 #     def _impl(inputs, input_types):
 
 
-def _SimpleImputer(op, inexpr, dshape, dtype):
+def _SimpleImputer(op, inexpr, dshape, dtype, columns=None):
     boolean_mask = _op.isnan(inexpr)
 
     fill_col = _op.const(np.array(op.statistics_, dtype=dtype))
-    reps = [1 if i > 0 else dshape[0] for i in range(len(dshape))]
+    input_shape = _op.shape_of(inexpr)
+    reps = _op.take(input_shape, _op.const([0]))
+    reps = _op.concatenate([reps, _op.const([1])], axis=0)
 
     fill_val = _op.tile(fill_col, reps=reps)
 
@@ -59,14 +61,20 @@ def _SimpleImputer(op, inexpr, dshape, dtype):
     
     return ret
 
-def _RobustImputer(op, inexpr, dshape, dtype):
+def _RobustImputer(op, inexpr, dshape, dtype, columns=None):
     if not op.mask_function:
         inf_mask = _op.isinf(inexpr)
         nan_val = _op.full_like(inexpr, _op.const(np.array(np.nan, dtype=dtype)))
         inexpr = _op.where(inf_mask, nan_val, inexpr) 
-    return _SimpleImputer(op.simple_imputer_, inexpr, dshape, dtype)
+    ret = _SimpleImputer(op.simple_imputer_, inexpr, dshape, dtype, columns)
 
-def _OneHotEncoder(op, inexpr, dshape, dtype):
+    if columns: 
+        column_indices = _op.const(columns)
+        ret = _op.take(ret, indices=column_indices, axis=1)
+    return ret 
+    
+
+def _OneHotEncoder(op, inexpr, dshape, dtype, columns=None):
     cols = _op.split(inexpr, dshape[1], axis=1)
 
     out = [] 
@@ -83,7 +91,7 @@ def _OneHotEncoder(op, inexpr, dshape, dtype):
     ret = _op.concatenate(out, axis=1) 
     return ret 
 
-def _LabelEncoder(op, inexpr, dshape, dtype):
+def _LabelEncoder(op, inexpr, dshape, dtype, columns=None):
     is_inverse = False
 
     class_mask = []
@@ -105,7 +113,7 @@ def _LabelEncoder(op, inexpr, dshape, dtype):
 
     return out
 
-def _RobustLabelEncoder(op, inexpr, dshape, dtype):
+def _RobustLabelEncoder(op, inexpr, dshape, dtype, columns=None):
     is_inverse = False
 
     class_mask = []
@@ -134,13 +142,13 @@ def _RobustLabelEncoder(op, inexpr, dshape, dtype):
 
     return out
 
-def _NALabelEncoder(op, inexpr, dshape, dtype):
+def _NALabelEncoder(op, inexpr, dshape, dtype, columns=None):
     flattened_inexpr = _op.reshape(inexpr, newshape=-1)
     flattened_dshape = [np.prod(dshape, dtype=np.int32)]
     ret = _RobustImputer(op.model_, flattened_inexpr, flattened_dshape, dtype)
     return ret
 
-def _OneHotEncoder(op, inexpr, dshape, dtype):
+def _OneHotEncoder(op, inexpr, dshape, dtype, columns=None):
     cols = _op.split(inexpr, dshape[1], axis=1)
 
     out = [] 
@@ -149,15 +157,14 @@ def _OneHotEncoder(op, inexpr, dshape, dtype):
         cat_tensor = _op.const(np.array(category, dtype=dtype))
         tiled_col = _op.tile(cols[i], (1, len(category)))
         one_hot_mask = _op.equal(tiled_col, cat_tensor)
-        one_hot_shape = [dshape[0], len(category)]
-        one_hot = _op.where(one_hot_mask,
-                            _op.ones(shape=one_hot_shape, dtype=dtype),
-                            _op.zeros(shape=one_hot_shape, dtype=dtype))
+        ones = _op.full_like(tiled_col, _op.const(1, dtype=dtype))
+        zeros = _op.full_like(tiled_col, _op.const(0, dtype=dtype))
+        one_hot = _op.where(one_hot_mask, ones, zeros)
         out.append(one_hot)
     ret = _op.concatenate(out, axis=1) 
     return ret 
 
-def _ThresholdOneHotEncoder(op, inexpr, dshape, dtype):
+def _ThresholdOneHotEncoder(op, inexpr, dshape, dtype, columns=None):
     cols = _op.split(inexpr, dshape[1], axis=1)
 
     out = [] 
@@ -166,10 +173,9 @@ def _ThresholdOneHotEncoder(op, inexpr, dshape, dtype):
         cat_tensor = _op.const(np.array(category, dtype=dtype))
         tiled_col = _op.tile(cols[i], (1, len(category)))
         one_hot = _op.equal(tiled_col, cat_tensor)
-        one_hot_shape = [dshape[0], len(category)]
-        one_hot = _op.where(one_hot,
-                            _op.ones(shape=one_hot_shape, dtype=dtype),
-                            _op.zeros(shape=one_hot_shape, dtype=dtype))
+        ones = _op.full_like(tiled_col, _op.const(1, dtype=dtype))
+        zeros = _op.full_like(tiled_col, _op.const(0, dtype=dtype))
+        one_hot = _op.where(one_hot_mask, ones, zeros)
         out.append(one_hot)
 
     one_hot_concat = _op.concatenate(out, axis=1) 
@@ -182,7 +188,7 @@ def _ThresholdOneHotEncoder(op, inexpr, dshape, dtype):
     ret = _op.bitwise_and(one_hot_concat, threshold_num_mask)
     return ret
 
-def _OrdinalEncoder(op, inexpr, dshape, dtype):
+def _OrdinalEncoder(op, inexpr, dshape, dtype, columns=None):
     cols = _op.split(inexpr, dshape[1], axis=1)
 
     out = [] 
@@ -203,7 +209,7 @@ def _OrdinalEncoder(op, inexpr, dshape, dtype):
     ret = _op.concatenate(out, axis=1) 
     return ret 
 
-def _RobustOrdinalEncoder(op, inexpr, dshape, dtype):
+def _RobustOrdinalEncoder(op, inexpr, dshape, dtype, columns=None):
     cols = _op.split(inexpr, dshape[1], axis=1)
 
     out = [] 
@@ -233,18 +239,18 @@ def _RobustOrdinalEncoder(op, inexpr, dshape, dtype):
     ret = _op.concatenate(out, axis=1) 
     return ret 
 
-def _StandardScaler(op, inexpr, dshape, dtype):
+def _StandardScaler(op, inexpr, dshape, dtype, columns=None):
     ret = _op.subtract(inexpr, _op.const(np.array(op.mean_, dtype), dtype))
     ret = _op.divide(ret, _op.const(np.array(op.scale_, dtype), dtype))
     return ret
 
-def _RobustStandardScaler(op, inexpr, dshape, dtype):
+def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
     op = op.scaler_
     ret = _op.subtract(inexpr, _op.const(np.array(op.mean_, dtype), dtype))
     ret = _op.divide(ret, _op.const(np.array(op.scale_, dtype), dtype))
     return ret
 
-def _KBinsDiscretizer(op, inexpr, dshape, dtype):
+def _KBinsDiscretizer(op, inexpr, dshape, dtype, columns=None):
     bin_edges = np.transpose(np.vstack(op.bin_edges_))
     # for bin_edge in bin_edges:
 
@@ -258,7 +264,7 @@ def _KBinsDiscretizer(op, inexpr, dshape, dtype):
     
     return out
 
-def _TfidfVectorizer(op, inexpr, dshape, dtype):
+def _TfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
     if op.use_idf:
         idf = _op.const(np.array(op.idf_, dtype=dtype), dtype=dtype)
         tfidf = _op.multiply(idf, inexpr)
@@ -270,7 +276,7 @@ def _TfidfVectorizer(op, inexpr, dshape, dtype):
     
     return ret
 
-def _PCA(op, inexpr, dshape, dtype):
+def _PCA(op, inexpr, dshape, dtype, columns=None):
     eigvec = _op.const(np.array(op.components_, dtype))
     ret = _op.nn.dense(inexpr, eigvec)
     return ret
@@ -292,26 +298,35 @@ _convert_map = {
     'PCA': _PCA
 }
 
-def sklearn_op_to_relay(op, inexpr, dshape, dtype):
+def sklearn_op_to_relay(op, inexpr, dshape, dtype, columns=None):
     classname = type(op).__name__
-    return _convert_map[classname](op, inexpr, dshape, dtype)
+    return _convert_map[classname](op, inexpr, dshape, dtype, columns)
 
 def from_sklearn(model,
               shape=None,
-              dtype="float32"):
+              dtype="float32",
+              columns=None):
     # print('running sklearn frontend......................................')
 
     try:
         import sklearn
     except ImportError:
         pass
-
+    
     inexpr = _expr.var('input', shape=shape, dtype=dtype)
-    outexpr = sklearn_op_to_relay(model, inexpr, shape, dtype)
+    outexpr = sklearn_op_to_relay(model, inexpr, shape, dtype, columns)
 
     func = _function.Function(analysis.free_vars(outexpr), outexpr)
 
     return IRModule.from_expr(func), []
+
+def serialize_pipeline(pipeline, serialized=[]):
+    for _, transformer in pipeline.steps:
+        if transformer.__class__.__name__ == "ColumnTransformer":
+            for _, sub_pipe, _ in transformer.transformers:
+                serialize_pipeline(sub_pipe, serialized)
+            continue
+        serialized.append(transformer)
 
 def from_auto_ml(model,
               shape=None,
@@ -323,11 +338,14 @@ def from_auto_ml(model,
     except ImportError:
         pass
 
-
-    print(model.feature_transformer.steps[0])
-    print(model.feature_transformer.steps[1])
-    print(model.target_transformer)
+    serialized_models = []
+    serialize_pipeline(model.feature_transformer, serialized_models)
+    print(serialized_models)
+    print(model)
     # inexpr = _expr.var('input', shape=shape, dtype=dtype)
+    # # for model in serialized_models:
+
+
     # outexpr = sklearn_op_to_relay(model, inexpr, shape, dtype)
 
     # func = _function.Function(analysis.free_vars(outexpr), outexpr)
