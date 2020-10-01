@@ -118,8 +118,8 @@ def test_column_transfomer():
 
 
 if __name__ == '__main__':
-    # test_simple_imputer()
-    # test_robust_imputer()
-    # test_robust_scaler()
-    # test_column_transfomer()
+    test_simple_imputer()
+    test_robust_imputer()
+    test_robust_scaler()
+    test_column_transfomer()
     test_threshold_onehot_encoder()
