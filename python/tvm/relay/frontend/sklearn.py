@@ -43,6 +43,10 @@ from .common import infer_value_simulated as _infer_value_simulated
 
 
 def _SimpleImputer(op, inexpr, dshape, dtype, columns=None):
+    """
+    Scikit-Learn Transformer: 
+    Imputation transformer for completing missing values.
+    """
     boolean_mask = _op.isnan(inexpr)
     fill_col = _op.const(np.array(op.statistics_, dtype=dtype))
     input_shape = _op.shape_of(inexpr)
@@ -60,11 +64,15 @@ def _SimpleImputer(op, inexpr, dshape, dtype, columns=None):
     return ret
 
 def _RobustImputer(op, inexpr, dshape, dtype, columns=None):
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer: 
+    Imputation transformer for completing missing values with multi-column support.
+    """
     if columns: 
         column_indices = _op.const(columns)
         inexpr = _op.take(inexpr, indices=column_indices, axis=1)
 
-    if not op.mask_function:
+    if op.mask_function is not None:
         inf_mask = _op.isinf(inexpr)
         nan_val = _op.full_like(inexpr, _op.const(np.array(np.nan, dtype=dtype)))
         inexpr = _op.where(inf_mask, nan_val, inexpr) 
@@ -73,6 +81,11 @@ def _RobustImputer(op, inexpr, dshape, dtype, columns=None):
     return ret 
     
 def _ThresholdOneHotEncoder(op, inexpr, dshape, dtype, columns=None):
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer: 
+    Encode categorical integer features as a one-hot numeric array, with optional restrictions on
+    feature encoding.
+    """
     if columns: 
         column_indices = _op.const(columns)
         inexpr = _op.take(inexpr, indices=column_indices, axis=1)
@@ -93,12 +106,20 @@ def _ThresholdOneHotEncoder(op, inexpr, dshape, dtype, columns=None):
     return ret
 
 def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer: 
+    Standardize features by removing the mean and scaling to unit variance
+    """
     scaler = op.scaler_
     ret = _op.subtract(inexpr, _op.const(np.array(scaler.mean_, dtype), dtype))
     ret = _op.divide(ret, _op.const(np.array(scaler.scale_, dtype), dtype))
     return ret
 
 def _ColumnTransformer(op, inexpr, dshape, dtype, columns=None):
+    """
+    Scikit-Learn Compose: 
+    Applies transformers to columns of an array 
+    """
     out = []
     for _, pipe, cols in op.transformers_:
         mod = pipe.steps[0][1]
@@ -119,14 +140,15 @@ def sklearn_op_to_relay(op, inexpr, dshape, dtype, columns=None):
     return _convert_map[classname](op, inexpr, dshape, dtype, columns)
 
 def from_sklearn(model,
-              shape=None,
-              dtype="float32",
-              columns=None):
+                 shape=None,
+                 dtype="float32",
+                 columns=None):
 
     try:
         import sklearn
-    except ImportError:
-        pass
+    except ImportError as e:
+        raise ImportError(
+            "Unable to import scikit-learn which is required {}".format(e))
     
     inexpr = _expr.var('input', shape=shape, dtype=dtype)
     outexpr = sklearn_op_to_relay(model, inexpr, shape, dtype, columns)
@@ -135,13 +157,14 @@ def from_sklearn(model,
     return IRModule.from_expr(func), []
 
 def from_auto_ml(model,
-              shape=None,
-              dtype="float32"):
+                shape=None,
+                dtype="float32"):
 
     try:
         import sklearn
-    except ImportError:
-        pass
+    except ImportError as e:
+        raise ImportError(
+            "Unable to import scikit-learn which is required {}".format(e))
 
     outexpr = _expr.var('input', shape=shape, dtype=dtype)
     for _, transformer in model.feature_transformer.steps:
@@ -149,6 +172,3 @@ def from_auto_ml(model,
 
     func = _function.Function(analysis.free_vars(outexpr), outexpr)
     return IRModule.from_expr(func), []
-
-    
-    

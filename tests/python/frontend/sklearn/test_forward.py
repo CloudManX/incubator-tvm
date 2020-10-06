@@ -29,7 +29,6 @@ import tvm
 from tvm import te
 from tvm import relay
 from tvm.contrib import graph_runtime
-from tvm.relay.testing.config import ctx_list
 import scipy
 
 class SklearnTestHelper:
