@@ -112,20 +112,128 @@ def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
     
     return _op.concatenate(out, axis=1)
 
-def _InverseLabelTransformer(op, inexpr, dshape, dtype, columns=None):
-    """
-    Identity transformation of the label data. The conversion to string happens in runtime
-    """
-    return _op.copy(inexpr)
+def _RobustOrdinalEncoder(op, inexpr, dshape, dtype, columns=None):
+    cols = _op.split(inexpr, dshape[1], axis=1)
+
+    out = [] 
+    for i in range(dshape[1]):
+        category = op.categories_[i]
+        cat_tensor = _op.const(np.array(category, dtype=dtype))
+        tiled_col = _op.tile(cols[i], (1, len(category)))
+        one_hot_mask = _op.equal(tiled_col, cat_tensor)
+        one_hot_shape = [dshape[0], len(category)]
+        one_hot = _op.where(one_hot_mask,
+                            _op.ones(shape=one_hot_shape, dtype=dtype),
+                            _op.zeros(shape=one_hot_shape, dtype=dtype))
+
+        offset = _op.const(np.arange(-1, len(category)-1, dtype=dtype))
+        zeros = _op.full_like(one_hot, _op.const(0, dtype=dtype))
+        ordinal_col =_op.where(one_hot_mask, _op.add(one_hot, offset), zeros)
+        ordinal = _op.expand_dims(_op.sum(ordinal_col, axis=1), -1)
+
+        # one_hot_mask_cols = _op.split(one_hot_mask, len(category), axis=1)
+        # unseen_mask = one_hot_mask_cols[0]
+        # for j in range(1, len(category)):
+        #     unseen_mask = _op.logical_or(unseen_mask, one_hot_mask_cols[j])
+        seen_mask = _op.cast(_op.sum(one_hot, axis=1), dtype="bool")
+        extra_class = _op.full_like(ordinal, _op.const(len(category), dtype=dtype))
+        robust_ordinal = _op.where(seen_mask, ordinal, extra_class)
+        out.append(robust_ordinal)
+        
+    ret = _op.concatenate(out, axis=1) 
+    return ret 
+
+def _RobustLabelEncoder(op, inexpr, dshape, dtype, columns=None):
+    is_inverse = False
+
+    class_mask = []
+    for i in range(len(op.classes_)):
+        val = _op.const(i, dtype) if is_inverse else _op.const(np.array(op.classes_[i], dtype), dtype)
+        class_mask.append(_op.equal(inexpr, val))
+    for i in range(len(op.classes_)):
+        if is_inverse:
+            label_mask = _op.full_like(inexpr, _op.const(np.array(op.classes_[i], dtype), dtype=dtype))
+        else:
+            label_mask = _op.full_like(inexpr, _op.const(i, dtype=dtype))
+
+        if i == 0:
+            out = _op.where(class_mask[i], label_mask, inexpr)
+            continue
+        out = _op.where(class_mask[i], label_mask, out)
+                
+    if op.fill_unseen_labels:
+        unseen_mask = class_mask[0]
+        for mask in class_mask[1:]:
+            unseen_mask = _op.logical_or(unseen_mask, mask)
+        unseen_mask = _op.logical_not(unseen_mask)
+        unseen_label = _op.const(-1, dtype=dtype) if is_inverse else _op.const(np.array(len(op.classes_)), dtype=dtype)
+        label_mask = _op.full_like(inexpr, unseen_label)
+        out = _op.where(unseen_mask, label_mask, out)
+
+    return out
+
+def _NALabelEncoder(op, inexpr, dshape, dtype, columns=None):
+    flattened_inexpr = _op.reshape(inexpr, newshape=-1)
+    flattened_dshape = [np.prod(dshape, dtype=np.int32)]
+    ret = _RobustImputer(op.model_, flattened_inexpr, flattened_dshape, dtype)
+    return ret
+
+def _StandardScaler(op, inexpr, dshape, dtype, columns=None):
+    ret = _op.subtract(inexpr, _op.const(np.array(op.mean_, dtype), dtype))
+    ret = _op.divide(ret, _op.const(np.array(op.scale_, dtype), dtype))
+    return ret
+
+def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
+    scaler = op.scaler_
+    ret = _op.subtract(inexpr, _op.const(np.array(scaler.mean_, dtype), dtype))
+    ret = _op.divide(ret, _op.const(np.array(scaler.scale_, dtype), dtype))
+    return ret
+
+def _KBinsDiscretizer(op, inexpr, dshape, dtype, columns=None):
+    bin_edges = np.transpose(np.vstack(op.bin_edges_))
+    # for bin_edge in bin_edges:
+
+    out = _op.full_like(inexpr, _op.const(0, dtype=dtype))
+
+    for i in range(1, len(bin_edges)-1):
+        indices_mask = _op.full_like(inexpr, _op.const(i, dtype=dtype))
+        bin_edge = _op.const(bin_edges[i])
+        bin_mask = _op.greater_equal(inexpr, bin_edge)
+        out = _op.where(bin_mask, indices_mask, out)
+    
+    return out
+
+def _TfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
+    if op.use_idf:
+        idf = _op.const(np.array(op.idf_, dtype=dtype), dtype=dtype)
+        tfidf = _op.multiply(idf, inexpr)
+        if op.sublinear_tf:
+            tfidf = _op.add(tfidf, _op.const(1, dtype))
+        ret = _op.nn.l2_normalize(tfidf, eps=.0001, axis=[1])
+    else:
+        ret = _op.nn.l2_normalize(inexpr, eps=.0001, axis=[1])
+    
+    return ret
+
+def _PCA(op, inexpr, dshape, dtype, columns=None):
+    eigvec = _op.const(np.array(op.components_, dtype))
+    ret = _op.nn.dense(inexpr, eigvec)
+    return ret
 
 _convert_map = {
-    'ColumnTransformer': {'transform': _ColumnTransformer},
-    'SimpleImputer': {'transform': _SimpleImputer},
-    'RobustImputer': {'transform': _RobustImputer},
-    'RobustStandardScaler': {'transform': _RobustStandardScaler},
-    'ThresholdOneHotEncoder': {'transform': _ThresholdOneHotEncoder},
-    'RobustLabelEncoder': {'inverse_transform': _InverseLabelTransformer},
-    'NALabelEncoder': {'inverse_transform': _InverseLabelTransformer}
+    'ColumnTransformer':_ColumnTransformer,
+    'SimpleImputer': _SimpleImputer,
+    'RobustImputer': _RobustImputer,
+    'LabelEncoder': _LabelEncoder,
+    'RobustLabelEncoder': _RobustLabelEncoder,
+    'RobustOrdinalEncoder': _RobustOrdinalEncoder,
+    'NALabelEncoder': _NALabelEncoder,
+    'StandardScaler': _StandardScaler,
+    'KBinsDiscretizer': _KBinsDiscretizer,
+    'RobustStandardScaler': _RobustStandardScaler,
+    'ThresholdOneHotEncoder': _ThresholdOneHotEncoder,
+    'TfidfVectorizer': _TfidfVectorizer,
+    'PCA': _PCA
 }
 
 def sklearn_op_to_relay(op, inexpr, dshape, dtype, func_name, columns=None):
