@@ -116,7 +116,7 @@ def _InverseLabelTransformer(op, inexpr, dshape, dtype, columns=None):
     """
     Identity transformation of the label data. The conversion to string happens in runtime
     """
-    return inexpr
+    return _op.copy(inexpr)
 
 _convert_map = {
     'ColumnTransformer': {'transform': _ColumnTransformer},
@@ -149,8 +149,6 @@ def from_sklearn(model,
                  dtype="float32",
                  func_name="transform",
                  columns=None):
-
-def from_sklearn(model, shape=None, dtype="float32", columns=None):
     """
     Import scikit-learn model to Relay.
     """
@@ -170,8 +168,6 @@ def from_auto_ml(model,
                 shape=None,
                 dtype="float32",
                 func_name="transform"):
-
-def from_auto_ml(model, shape=None, dtype="float32"):
     """
     Import automl model to Relay.
     """
