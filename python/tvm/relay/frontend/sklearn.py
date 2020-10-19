@@ -124,7 +124,7 @@ _convert_map = {
     'RobustImputer': {'transform': _RobustImputer},
     'RobustStandardScaler': {'transform': _RobustStandardScaler},
     'ThresholdOneHotEncoder': {'transform': _ThresholdOneHotEncoder},
-    'RobustLabelEncoder': {'inverse_transform': _InverseLabelTransformer}
+    'RobustLabelEncoder': {'inverse_transform': _InverseLabelTransformer},
     'NALabelEncoder': {'inverse_transform': _InverseLabelTransformer}
 }
 
