@@ -125,6 +125,7 @@ _convert_map = {
     'RobustStandardScaler': {'transform': _RobustStandardScaler},
     'ThresholdOneHotEncoder': {'transform': _ThresholdOneHotEncoder},
     'RobustLabelEncoder': {'inverse_transform': _InverseLabelTransformer}
+    'NALabelEncoder': {'inverse_transform': _InverseLabelTransformer}
 }
 
 def sklearn_op_to_relay(op, inexpr, dshape, dtype, func_name, columns=None):
