@@ -239,7 +239,6 @@ _convert_map = {
     'ColumnTransformer':_ColumnTransformer,
     'SimpleImputer': _SimpleImputer,
     'RobustImputer': _RobustImputer,
-    'LabelEncoder': _LabelEncoder,
     'RobustLabelEncoder': _RobustLabelEncoder,
     'RobustOrdinalEncoder': _RobustOrdinalEncoder,
     'NALabelEncoder': _NALabelEncoder,
