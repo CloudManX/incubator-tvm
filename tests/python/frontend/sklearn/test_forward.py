@@ -24,8 +24,8 @@ from sagemaker_sklearn_extension.preprocessing import RobustStandardScaler
 from sagemaker_sklearn_extension.preprocessing import ThresholdOneHotEncoder, RobustLabelEncoder
 
 from tvm import topi
-import tvm.topi.testing
 import tvm
+import tvm.testing
 from tvm import te
 from tvm import relay
 from tvm.contrib import graph_runtime
