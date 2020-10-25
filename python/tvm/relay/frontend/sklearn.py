@@ -18,6 +18,8 @@
 # pylint: disable=import-outside-toplevel
 """Scikit-learn frontend."""
 import numpy as np
+import tvm
+from tvm import relay
 from tvm.ir import IRModule
 
 from .. import analysis
@@ -173,9 +175,11 @@ def _RobustLabelEncoder(op, inexpr, dshape, dtype, columns=None):
     return out
 
 def _NALabelEncoder(op, inexpr, dshape, dtype, columns=None):
-    flattened_inexpr = _op.reshape(inexpr, newshape=-1)
-    flattened_dshape = [np.prod(dshape, dtype=np.int32)]
-    ret = _RobustImputer(op.model_, flattened_inexpr, flattened_dshape, dtype)
+    flattened_inexpr = _op.reshape(inexpr, newshape=(-1, 1))
+    # Hardcoded flattened shape to be (?, 1)
+    flattened_dshape = (relay.Any(), 1)
+    ri_out = _RobustImputer(op.model_, flattened_inexpr, flattened_dshape, dtype)
+    ret = _op.reshape(ri_out, newshape=-1)
     return ret
 
 def _StandardScaler(op, inexpr, dshape, dtype, columns=None):
