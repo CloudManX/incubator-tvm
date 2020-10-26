@@ -104,8 +104,8 @@ def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
 
 def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
     """
-    Scikit-Learn Compose:
-    Applies transformers to columns of an array
+    Scikit-Learn Compose: 
+    Applies transformers to columns of an array 
     """
     out = []
     for _, pipe, cols in op.transformers_:
@@ -113,6 +113,12 @@ def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
         out.append(sklearn_op_to_relay(mod, inexpr, dshape, dtype, func_name, cols))
     
     return _op.concatenate(out, axis=1)
+
+def _InverseLabelTransformer(op, inexpr, dshape, dtype, columns=None):
+    """
+    Identity transformation of the label data. The conversion to string happens in runtime
+    """
+    return inexpr
 
 def _RobustOrdinalEncoder(op, inexpr, dshape, dtype, columns=None):
     cols = _op.split(inexpr, dshape[1], axis=1)
@@ -182,11 +188,6 @@ def _NALabelEncoder(op, inexpr, dshape, dtype, columns=None):
     ret = _op.reshape(ri_out, newshape=-1)
     return ret
 
-def _StandardScaler(op, inexpr, dshape, dtype, columns=None):
-    ret = _op.subtract(inexpr, _op.const(np.array(op.mean_, dtype), dtype))
-    ret = _op.divide(ret, _op.const(np.array(op.scale_, dtype), dtype))
-    return ret
-
 def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
     scaler = op.scaler_
     ret = _op.subtract(inexpr, _op.const(np.array(scaler.mean_, dtype), dtype))
@@ -225,18 +226,17 @@ def _PCA(op, inexpr, dshape, dtype, columns=None):
     return ret
 
 _convert_map = {
-    'ColumnTransformer':_ColumnTransformer,
-    'SimpleImputer': _SimpleImputer,
-    'RobustImputer': _RobustImputer,
-    'RobustLabelEncoder': _RobustLabelEncoder,
-    'RobustOrdinalEncoder': _RobustOrdinalEncoder,
-    'NALabelEncoder': _NALabelEncoder,
-    'StandardScaler': _StandardScaler,
-    'KBinsDiscretizer': _KBinsDiscretizer,
-    'RobustStandardScaler': _RobustStandardScaler,
-    'ThresholdOneHotEncoder': _ThresholdOneHotEncoder,
-    'TfidfVectorizer': _TfidfVectorizer,
-    'PCA': _PCA
+    'ColumnTransformer': {'transform': _ColumnTransformer},
+    'SimpleImputer': {'transform': _SimpleImputer},
+    'RobustImputer': {'transform': _RobustImputer},
+    'RobustStandardScaler': {'transform': _RobustStandardScaler},
+    'ThresholdOneHotEncoder': {'transform': _ThresholdOneHotEncoder},
+    'NALabelEncoder': {'transform': _NALabelEncoder, 'inverse_transform': _InverseLabelTransformer},
+    'RobustLabelEncoder': {'inverse_transform': _InverseLabelTransformer},
+    'RobustOrdinalEncoder': {'transform':_RobustOrdinalEncoder},
+    'KBinsDiscretizer': {'transform':_KBinsDiscretizer},
+    'TfidfVectorizer': {'transform':_TfidfVectorizer},
+    'PCA': {'transform':_PCA}
 }
 
 def sklearn_op_to_relay(op, inexpr, dshape, dtype, func_name, columns=None):
@@ -281,12 +281,13 @@ def from_auto_ml(model,
                 dtype="float32",
                 func_name="transform"):
     """
-    Import automl model to Relay.
+    Import scikit-learn model to Relay.
     """
     try:
-        import sklearn  # pylint: disable=unused-import
+        import sklearn
     except ImportError as e:
-        raise ImportError("Unable to import scikit-learn which is required {}".format(e))
+        raise ImportError(
+            "Unable to import scikit-learn which is required {}".format(e))
 
     outexpr = _expr.var('input', shape=shape, dtype=dtype)
 
@@ -297,6 +298,22 @@ def from_auto_ml(model,
         transformer = model.target_transformer
         outexpr = sklearn_op_to_relay(transformer, outexpr, shape, dtype, func_name, None)
 
+
+    func = _function.Function(analysis.free_vars(outexpr), outexpr)
+    return IRModule.from_expr(func), []
+
+def from_auto_ml(model, shape=None, dtype="float32"):
+    """
+    Import automl model to Relay.
+    """
+    try:
+        import sklearn  # pylint: disable=unused-import
+    except ImportError as e:
+        raise ImportError("Unable to import scikit-learn which is required {}".format(e))
+
+    outexpr = _expr.var("input", shape=shape, dtype=dtype)
+    for _, transformer in model.feature_transformer.steps:
+        outexpr = sklearn_op_to_relay(transformer, outexpr, shape, dtype, None)
 
     func = _function.Function(analysis.free_vars(outexpr), outexpr)
     return IRModule.from_expr(func), []
