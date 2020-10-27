@@ -144,13 +144,13 @@ def test_inverse_label_transformer():
     # of tvm in runtime as post processing
     tvm.testing.assert_allclose(data, tvm_out, rtol=1e-5, atol=1e-5)
 
-# def test_robust_ordinal_encoder():
-#     st_helper = SklearnTestHelper()
-#     roe = RobustOrdinalEncoder()
-#     data = np.array([[0,1],[0,4],[1,2],[1,10]], dtype=np.float32)
-#     roe.fit(data)
-#     dshape = (relay.Any(), len(data[0]))
-#     _test_model_impl(st_helper, roe, dshape, data)
+def test_robust_ordinal_encoder():
+    st_helper = SklearnTestHelper()
+    roe = RobustOrdinalEncoder()
+    data = np.array([[0,1],[0,4],[1,2],[1,10]], dtype=np.float32)
+    roe.fit(data)
+    dshape = (relay.Any(), len(data[0]))
+    _test_model_impl(st_helper, roe, dshape, data)
 
 def test_na_label_encoder():
     st_helper = SklearnTestHelper()
@@ -203,7 +203,7 @@ if __name__ == "__main__":
     test_column_transfomer()
     test_threshold_onehot_encoder()
     test_inverse_label_transformer()
-    # test_robust_ordinal_encoder()
+    test_robust_ordinal_encoder()
     test_na_label_encoder()
     test_kbins_discretizer()
     # test_tfidf_vectorizer()

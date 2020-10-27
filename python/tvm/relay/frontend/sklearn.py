@@ -95,7 +95,7 @@ def _ThresholdOneHotEncoder(op, inexpr, dshape, dtype, columns=None):
 def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
     """
     Sagemaker-Scikit-Learn-Extension Transformer:
-    Standardize features by removing the mean and scaling to unit variance
+    Standardize features by removing the mean and scaling to unit variance.
     """
     scaler = op.scaler_
     ret = _op.subtract(inexpr, _op.const(np.array(scaler.mean_, dtype), dtype))
@@ -116,34 +116,40 @@ def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
 
 def _InverseLabelTransformer(op, inexpr, dshape, dtype, columns=None):
     """
-    Identity transformation of the label data. The conversion to string happens in runtime
+    Identity transformation of the label data. The conversion to string happens in runtime.
     """
-    return inexpr
+    return inexpr.copy()
 
 def _RobustOrdinalEncoder(op, inexpr, dshape, dtype, columns=None):
-    cols = _op.split(inexpr, dshape[1], axis=1)
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer:
+    Encode categorical features as an integer array additional feature of handling unseen values. 
+    The input to this transformer should be an array-like of integers or strings, denoting the 
+    values taken on by categorical (discrete) features. The features are converted to ordinal 
+    integers. This results in a single column of integers (0 to n_categories - 1) per feature.
+    """
+    if columns:
+        column_indices = _op.const(columns)
+        inexpr = _op.take(inexpr, indices=column_indices, axis=1)
 
-    out = [] 
-    for i in range(dshape[1]):
+    num_cat = len(op.categories_)
+    cols = _op.split(inexpr, num_cat, axis=1)
+
+    out = []
+    for i in range(num_cat):
         category = op.categories_[i]
         cat_tensor = _op.const(np.array(category, dtype=dtype))
         tiled_col = _op.tile(cols[i], (1, len(category)))
         one_hot_mask = _op.equal(tiled_col, cat_tensor)
-        one_hot_shape = [dshape[0], len(category)]
-        one_hot = _op.where(one_hot_mask,
-                            _op.ones(shape=one_hot_shape, dtype=dtype),
-                            _op.zeros(shape=one_hot_shape, dtype=dtype))
+        one_hot = _op.cast(one_hot_mask, dtype)
 
         offset = _op.const(np.arange(-1, len(category)-1, dtype=dtype))
         zeros = _op.full_like(one_hot, _op.const(0, dtype=dtype))
         ordinal_col =_op.where(one_hot_mask, _op.add(one_hot, offset), zeros)
         ordinal = _op.expand_dims(_op.sum(ordinal_col, axis=1), -1)
 
-        # one_hot_mask_cols = _op.split(one_hot_mask, len(category), axis=1)
-        # unseen_mask = one_hot_mask_cols[0]
-        # for j in range(1, len(category)):
-        #     unseen_mask = _op.logical_or(unseen_mask, one_hot_mask_cols[j])
         seen_mask = _op.cast(_op.sum(one_hot, axis=1), dtype="bool")
+        seen_mask = _op.expand_dims(seen_mask, -1)
         extra_class = _op.full_like(ordinal, _op.const(len(category), dtype=dtype))
         robust_ordinal = _op.where(seen_mask, ordinal, extra_class)
         out.append(robust_ordinal)
@@ -152,7 +158,13 @@ def _RobustOrdinalEncoder(op, inexpr, dshape, dtype, columns=None):
     return ret 
 
 def _RobustLabelEncoder(op, inexpr, dshape, dtype, columns=None):
-    is_inverse = False
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer:
+    Encode target labels with value between 0 and n_classes-1.
+    """
+    if columns:
+        column_indices = _op.const(columns)
+        inexpr = _op.take(inexpr, indices=column_indices, axis=1)
 
     class_mask = []
     for i in range(len(op.classes_)):
@@ -181,6 +193,15 @@ def _RobustLabelEncoder(op, inexpr, dshape, dtype, columns=None):
     return out
 
 def _NALabelEncoder(op, inexpr, dshape, dtype, columns=None):
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer:
+    Encoder for transforming labels to NA values which encode all non-float and non-finite values
+    as NA values.
+    """
+    if columns:
+        column_indices = _op.const(columns)
+        inexpr = _op.take(inexpr, indices=column_indices, axis=1)
+
     flattened_inexpr = _op.reshape(inexpr, newshape=(-1, 1))
     # Hardcoded flattened shape to be (?, 1)
     flattened_dshape = (relay.Any(), 1)
@@ -189,15 +210,29 @@ def _NALabelEncoder(op, inexpr, dshape, dtype, columns=None):
     return ret
 
 def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer:
+    Standardize features by removing the mean and scaling to unit variance.
+    """
+    if columns:
+        column_indices = _op.const(columns)
+        inexpr = _op.take(inexpr, indices=column_indices, axis=1)
+
     scaler = op.scaler_
     ret = _op.subtract(inexpr, _op.const(np.array(scaler.mean_, dtype), dtype))
     ret = _op.divide(ret, _op.const(np.array(scaler.scale_, dtype), dtype))
     return ret
 
 def _KBinsDiscretizer(op, inexpr, dshape, dtype, columns=None):
-    bin_edges = np.transpose(np.vstack(op.bin_edges_))
-    # for bin_edge in bin_edges:
+    """
+    Scikit-Learn Transformer:
+    Bin continuous data into intervals.
+    """
+    if columns:
+        column_indices = _op.const(columns)
+        inexpr = _op.take(inexpr, indices=column_indices, axis=1)
 
+    bin_edges = np.transpose(np.vstack(op.bin_edges_))
     out = _op.full_like(inexpr, _op.const(0, dtype=dtype))
 
     for i in range(1, len(bin_edges)-1):
@@ -209,6 +244,10 @@ def _KBinsDiscretizer(op, inexpr, dshape, dtype, columns=None):
     return out
 
 def _TfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
+    """
+    Scikit-Learn Transformer:
+    Transform a count matrix to a normalized tf or tf-idf representation.
+    """
     if op.use_idf:
         idf = _op.const(np.array(op.idf_, dtype=dtype), dtype=dtype)
         tfidf = _op.multiply(idf, inexpr)
@@ -221,6 +260,10 @@ def _TfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
     return ret
 
 def _PCA(op, inexpr, dshape, dtype, columns=None):
+    """
+    Scikit-Learn Transformer:
+    PCA transformation with existing eigen vector.
+    """
     eigvec = _op.const(np.array(op.components_, dtype))
     ret = _op.nn.dense(inexpr, eigvec)
     return ret
