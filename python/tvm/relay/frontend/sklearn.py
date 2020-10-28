@@ -102,30 +102,33 @@ def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
     ret = _op.divide(ret, _op.const(np.array(scaler.scale_, dtype), dtype))
     return ret
 
+
 def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
     """
-    Scikit-Learn Compose: 
-    Applies transformers to columns of an array 
+    Scikit-Learn Compose:
+    Applies transformers to columns of an array
     """
     out = []
     for _, pipe, cols in op.transformers_:
         mod = pipe.steps[0][1]
         out.append(sklearn_op_to_relay(mod, inexpr, dshape, dtype, func_name, cols))
-    
+
     return _op.concatenate(out, axis=1)
+
 
 def _InverseLabelTransformer(op, inexpr, dshape, dtype, columns=None):
     """
     Identity transformation of the label data. The conversion to string happens in runtime.
     """
-    return inexpr.copy()
+    return _op.copy(inexpr)
+
 
 def _RobustOrdinalEncoder(op, inexpr, dshape, dtype, columns=None):
     """
     Sagemaker-Scikit-Learn-Extension Transformer:
-    Encode categorical features as an integer array additional feature of handling unseen values. 
-    The input to this transformer should be an array-like of integers or strings, denoting the 
-    values taken on by categorical (discrete) features. The features are converted to ordinal 
+    Encode categorical features as an integer array additional feature of handling unseen values.
+    The input to this transformer should be an array-like of integers or strings, denoting the
+    values taken on by categorical (discrete) features. The features are converted to ordinal
     integers. This results in a single column of integers (0 to n_categories - 1) per feature.
     """
     if columns:
@@ -143,9 +146,9 @@ def _RobustOrdinalEncoder(op, inexpr, dshape, dtype, columns=None):
         one_hot_mask = _op.equal(tiled_col, cat_tensor)
         one_hot = _op.cast(one_hot_mask, dtype)
 
-        offset = _op.const(np.arange(-1, len(category)-1, dtype=dtype))
+        offset = _op.const(np.arange(-1, len(category) - 1, dtype=dtype))
         zeros = _op.full_like(one_hot, _op.const(0, dtype=dtype))
-        ordinal_col =_op.where(one_hot_mask, _op.add(one_hot, offset), zeros)
+        ordinal_col = _op.where(one_hot_mask, _op.add(one_hot, offset), zeros)
         ordinal = _op.expand_dims(_op.sum(ordinal_col, axis=1), -1)
 
         seen_mask = _op.cast(_op.sum(one_hot, axis=1), dtype="bool")
@@ -153,9 +156,10 @@ def _RobustOrdinalEncoder(op, inexpr, dshape, dtype, columns=None):
         extra_class = _op.full_like(ordinal, _op.const(len(category), dtype=dtype))
         robust_ordinal = _op.where(seen_mask, ordinal, extra_class)
         out.append(robust_ordinal)
-        
-    ret = _op.concatenate(out, axis=1) 
-    return ret 
+
+    ret = _op.concatenate(out, axis=1)
+    return ret
+
 
 def _RobustLabelEncoder(op, inexpr, dshape, dtype, columns=None):
     """
@@ -168,11 +172,15 @@ def _RobustLabelEncoder(op, inexpr, dshape, dtype, columns=None):
 
     class_mask = []
     for i in range(len(op.classes_)):
-        val = _op.const(i, dtype) if is_inverse else _op.const(np.array(op.classes_[i], dtype), dtype)
+        val = (
+            _op.const(i, dtype) if is_inverse else _op.const(np.array(op.classes_[i], dtype), dtype)
+        )
         class_mask.append(_op.equal(inexpr, val))
     for i in range(len(op.classes_)):
         if is_inverse:
-            label_mask = _op.full_like(inexpr, _op.const(np.array(op.classes_[i], dtype), dtype=dtype))
+            label_mask = _op.full_like(
+                inexpr, _op.const(np.array(op.classes_[i], dtype), dtype=dtype)
+            )
         else:
             label_mask = _op.full_like(inexpr, _op.const(i, dtype=dtype))
 
@@ -180,17 +188,22 @@ def _RobustLabelEncoder(op, inexpr, dshape, dtype, columns=None):
             out = _op.where(class_mask[i], label_mask, inexpr)
             continue
         out = _op.where(class_mask[i], label_mask, out)
-                
+
     if op.fill_unseen_labels:
         unseen_mask = class_mask[0]
         for mask in class_mask[1:]:
             unseen_mask = _op.logical_or(unseen_mask, mask)
         unseen_mask = _op.logical_not(unseen_mask)
-        unseen_label = _op.const(-1, dtype=dtype) if is_inverse else _op.const(np.array(len(op.classes_)), dtype=dtype)
+        unseen_label = (
+            _op.const(-1, dtype=dtype)
+            if is_inverse
+            else _op.const(np.array(len(op.classes_)), dtype=dtype)
+        )
         label_mask = _op.full_like(inexpr, unseen_label)
         out = _op.where(unseen_mask, label_mask, out)
 
     return out
+
 
 def _NALabelEncoder(op, inexpr, dshape, dtype, columns=None):
     """
@@ -209,6 +222,7 @@ def _NALabelEncoder(op, inexpr, dshape, dtype, columns=None):
     ret = _op.reshape(ri_out, newshape=-1)
     return ret
 
+
 def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
     """
     Sagemaker-Scikit-Learn-Extension Transformer:
@@ -223,6 +237,7 @@ def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
     ret = _op.divide(ret, _op.const(np.array(scaler.scale_, dtype), dtype))
     return ret
 
+
 def _KBinsDiscretizer(op, inexpr, dshape, dtype, columns=None):
     """
     Scikit-Learn Transformer:
@@ -235,13 +250,14 @@ def _KBinsDiscretizer(op, inexpr, dshape, dtype, columns=None):
     bin_edges = np.transpose(np.vstack(op.bin_edges_))
     out = _op.full_like(inexpr, _op.const(0, dtype=dtype))
 
-    for i in range(1, len(bin_edges)-1):
+    for i in range(1, len(bin_edges) - 1):
         indices_mask = _op.full_like(inexpr, _op.const(i, dtype=dtype))
         bin_edge = _op.const(bin_edges[i])
         bin_mask = _op.greater_equal(inexpr, bin_edge)
         out = _op.where(bin_mask, indices_mask, out)
-    
+
     return out
+
 
 def _TfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
     """
@@ -253,11 +269,12 @@ def _TfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
         tfidf = _op.multiply(idf, inexpr)
         if op.sublinear_tf:
             tfidf = _op.add(tfidf, _op.const(1, dtype))
-        ret = _op.nn.l2_normalize(tfidf, eps=.0001, axis=[1])
+        ret = _op.nn.l2_normalize(tfidf, eps=0.0001, axis=[1])
     else:
-        ret = _op.nn.l2_normalize(inexpr, eps=.0001, axis=[1])
-    
+        ret = _op.nn.l2_normalize(inexpr, eps=0.0001, axis=[1])
+
     return ret
+
 
 def _PCA(op, inexpr, dshape, dtype, columns=None):
     """
@@ -268,82 +285,77 @@ def _PCA(op, inexpr, dshape, dtype, columns=None):
     ret = _op.nn.dense(inexpr, eigvec)
     return ret
 
+
 _convert_map = {
-    'ColumnTransformer': {'transform': _ColumnTransformer},
-    'SimpleImputer': {'transform': _SimpleImputer},
-    'RobustImputer': {'transform': _RobustImputer},
-    'RobustStandardScaler': {'transform': _RobustStandardScaler},
-    'ThresholdOneHotEncoder': {'transform': _ThresholdOneHotEncoder},
-    'NALabelEncoder': {'transform': _NALabelEncoder, 'inverse_transform': _InverseLabelTransformer},
-    'RobustLabelEncoder': {'inverse_transform': _InverseLabelTransformer},
-    'RobustOrdinalEncoder': {'transform':_RobustOrdinalEncoder},
-    'KBinsDiscretizer': {'transform':_KBinsDiscretizer},
-    'TfidfVectorizer': {'transform':_TfidfVectorizer},
-    'PCA': {'transform':_PCA}
+    "ColumnTransformer": {"transform": _ColumnTransformer},
+    "SimpleImputer": {"transform": _SimpleImputer},
+    "RobustImputer": {"transform": _RobustImputer},
+    "RobustStandardScaler": {"transform": _RobustStandardScaler},
+    "ThresholdOneHotEncoder": {"transform": _ThresholdOneHotEncoder},
+    "NALabelEncoder": {"transform": _NALabelEncoder, "inverse_transform": _InverseLabelTransformer},
+    "RobustLabelEncoder": {"inverse_transform": _InverseLabelTransformer},
+    "RobustOrdinalEncoder": {"transform": _RobustOrdinalEncoder},
+    "KBinsDiscretizer": {"transform": _KBinsDiscretizer},
+    "TfidfVectorizer": {"transform": _TfidfVectorizer},
+    "PCA": {"transform": _PCA},
 }
+
 
 def sklearn_op_to_relay(op, inexpr, dshape, dtype, func_name, columns=None):
     classname = type(op).__name__
 
     if classname not in _convert_map:
-        raise NameError(
-            "Model {} not supported in scikit-learn frontend".format(classname))
+        raise NameError("Model {} not supported in scikit-learn frontend".format(classname))
     if func_name not in _convert_map[classname]:
         raise NameError(
-                "Function {} of Model {} not supported in scikit-learn frontend".format(
-                    func_name, classname))
+            "Function {} of Model {} not supported in scikit-learn frontend".format(
+                func_name, classname
+            )
+        )
 
-
-    if classname == 'ColumnTransformer':
+    if classname == "ColumnTransformer":
         return _convert_map[classname][func_name](op, inexpr, dshape, dtype, func_name, columns)
     else:
         return _convert_map[classname][func_name](op, inexpr, dshape, dtype, columns)
 
-def from_sklearn(model,
-                 shape=None,
-                 dtype="float32",
-                 func_name="transform",
-                 columns=None):
+
+def from_sklearn(model, shape=None, dtype="float32", func_name="transform", columns=None):
     """
     Import scikit-learn model to Relay.
     """
     try:
         import sklearn  # pylint: disable=unused-import
     except ImportError as e:
-        raise ImportError(
-            "Unable to import scikit-learn which is required {}".format(e))
+        raise ImportError("Unable to import scikit-learn which is required {}".format(e))
 
-    inexpr = _expr.var('input', shape=shape, dtype=dtype)
+    inexpr = _expr.var("input", shape=shape, dtype=dtype)
     outexpr = sklearn_op_to_relay(model, inexpr, shape, dtype, func_name, columns)
 
     func = _function.Function(analysis.free_vars(outexpr), outexpr)
     return IRModule.from_expr(func), []
 
-def from_auto_ml(model,
-                shape=None,
-                dtype="float32",
-                func_name="transform"):
+
+def from_auto_ml(model, shape=None, dtype="float32", func_name="transform"):
     """
     Import scikit-learn model to Relay.
     """
     try:
         import sklearn
     except ImportError as e:
-        raise ImportError(
-            "Unable to import scikit-learn which is required {}".format(e))
+        raise ImportError("Unable to import scikit-learn which is required {}".format(e))
 
-    outexpr = _expr.var('input', shape=shape, dtype=dtype)
+    outexpr = _expr.var("input", shape=shape, dtype=dtype)
 
-    if func_name == 'transform':
+    if func_name == "transform":
         for _, transformer in model.feature_transformer.steps:
             outexpr = sklearn_op_to_relay(transformer, outexpr, shape, dtype, func_name, None)
     else:
         transformer = model.target_transformer
         outexpr = sklearn_op_to_relay(transformer, outexpr, shape, dtype, func_name, None)
 
-
     func = _function.Function(analysis.free_vars(outexpr), outexpr)
     return IRModule.from_expr(func), []
+
 
 def from_auto_ml(model, shape=None, dtype="float32"):
     """

@@ -23,8 +23,13 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, KBinsDiscretizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sagemaker_sklearn_extension.impute import RobustImputer
-from sagemaker_sklearn_extension.preprocessing import RobustStandardScaler, \
-    ThresholdOneHotEncoder, RobustLabelEncoder, RobustOrdinalEncoder, NALabelEncoder
+from sagemaker_sklearn_extension.preprocessing import (
+    RobustStandardScaler,
+    ThresholdOneHotEncoder,
+    RobustLabelEncoder,
+    RobustOrdinalEncoder,
+    NALabelEncoder,
+)
 
 from tvm import topi
 import tvm.topi.testing
@@ -34,6 +39,7 @@ from tvm import te
 from tvm import relay
 from tvm.contrib import graph_runtime
 import scipy
+
 
 class SklearnTestHelper:
     def __init__(self, target="llvm", ctx=tvm.cpu(0)):
@@ -53,15 +59,17 @@ class SklearnTestHelper:
         result = self.ex.evaluate()(data)
         return result.asnumpy()
 
+
 def _test_model_impl(helper, model, dshape, input_data):
-    helper.compile(model, dshape, 'float32', 'transform')
-    if type(model).__name__ == 'ThresholdOneHotEncoder':
+    helper.compile(model, dshape, "float32", "transform")
+    if type(model).__name__ == "ThresholdOneHotEncoder":
         sklearn_out = model.transform(input_data).toarray()
     else:
         sklearn_out = model.transform(input_data)
     tvm_out = helper.run(input_data)
 
     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
+
 
 def test_simple_imputer():
     st_helper = SklearnTestHelper()
@@ -76,6 +84,7 @@ def test_simple_imputer():
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, imp_mean, dshape, data)
 
+
 def test_robust_imputer():
     st_helper = SklearnTestHelper()
     data = np.array(
@@ -89,6 +98,7 @@ def test_robust_imputer():
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, ri, dshape, data)
 
+
 def test_robust_scaler():
     st_helper = SklearnTestHelper()
     rss = RobustStandardScaler()
@@ -98,6 +108,7 @@ def test_robust_scaler():
 
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, rss, dshape, data)
+
 
 def test_threshold_onehot_encoder():
     st_helper = SklearnTestHelper()
@@ -109,6 +120,7 @@ def test_threshold_onehot_encoder():
 
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, tohe, dshape, data)
+
 
 def test_column_transfomer():
     st_helper = SklearnTestHelper()
@@ -127,47 +139,51 @@ def test_column_transfomer():
     dshape = (relay.Any(), relay.Any())
     _test_model_impl(st_helper, ct, dshape, data)
 
+
 def test_inverse_label_transformer():
     st_helper = SklearnTestHelper()
     rle = RobustLabelEncoder()
 
     data = np.array([1, 2, 3, 4, 5], dtype=np.int32)
     rle.fit(data)
-    
+
     dshape = (len(data),)
-    st_helper.compile(rle, dshape, 'int32', 'inverse_transform')
+    st_helper.compile(rle, dshape, "int32", "inverse_transform")
     tvm_out = st_helper.run(data)
-    # identity transformation, because of the string input, the actually encoding happens outside 
+    # identity transformation, because of the string input, the actually encoding happens outside
     # of tvm in runtime as post processing
     tvm.testing.assert_allclose(data, tvm_out, rtol=1e-5, atol=1e-5)
+
 
 def test_robust_ordinal_encoder():
     st_helper = SklearnTestHelper()
     roe = RobustOrdinalEncoder()
-    data = np.array([[0,1],[0,4],[1,2],[1,10]], dtype=np.float32)
+    data = np.array([[0, 1], [0, 4], [1, 2], [1, 10]], dtype=np.float32)
     roe.fit(data)
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, roe, dshape, data)
 
+
 def test_na_label_encoder():
     st_helper = SklearnTestHelper()
     nle = NALabelEncoder()
-    i_put = np.array([[1,2,2,6]], dtype=np.float32)
+    i_put = np.array([[1, 2, 2, 6]], dtype=np.float32)
     nle.fit(i_put)
-    data = np.array([[np.nan,0,1,2,6]], dtype=np.float32)
+    data = np.array([[np.nan, 0, 1, 2, 6]], dtype=np.float32)
     dshape = (relay.Any(), len(data))
     _test_model_impl(st_helper, nle, dshape, data)
 
+
 def test_kbins_discretizer():
     st_helper = SklearnTestHelper()
-    kd = KBinsDiscretizer(n_bins=3, encode='ordinal', strategy='uniform')
-    data = np.array([[-2, 1, -4,   -1],
-                    [-1, 2, -3, -0.5],
-                    [ 0, 3, -2,  0.5],
-                    [ 1, 4, -1,    2]], dtype=np.float32)
+    kd = KBinsDiscretizer(n_bins=3, encode="ordinal", strategy="uniform")
+    data = np.array(
+        [[-2, 1, -4, -1], [-1, 2, -3, -0.5], [0, 3, -2, 0.5], [1, 4, -1, 2]], dtype=np.float32
+    )
     kd.fit(data)
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, kd, dshape, data)
+
 
 # def test_tfidf_vectorizer():
 #     st_helper = SklearnTestHelper()
@@ -178,12 +194,13 @@ def test_kbins_discretizer():
 #         'And this is the third one.',
 #         'Is this the first document?',
 #     ]
-    
+
 #     dshape = (relay.Any(), len(data))
 #     st_helper.compile(tiv, dshape, 'int32')
 #     sklearn_out = tiv.fit_transform(data).toarray()
 #     tvm_out = st_helper.run(data)
 #     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
+
 
 def test_pca():
     st_helper = SklearnTestHelper()
@@ -192,6 +209,7 @@ def test_pca():
     pca.fit(data)
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, pca, dshape, data)
+
 
 if __name__ == "__main__":
     test_simple_imputer()
