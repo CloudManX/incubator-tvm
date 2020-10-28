@@ -60,10 +60,7 @@ def _test_model_impl(helper, model, dshape, input_data):
     else:
         sklearn_out = model.transform(input_data)
     tvm_out = helper.run(input_data)
-    print(type(model).__name__)
-    print(sklearn_out)
-    print(tvm_out)
-    print("\n\n************************************\n\n")
+
     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
 def test_simple_imputer():
