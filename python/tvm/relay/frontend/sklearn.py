@@ -18,7 +18,6 @@
 # pylint: disable=import-outside-toplevel
 """Scikit-learn frontend."""
 import numpy as np
-import tvm
 from tvm import relay
 from tvm.ir import IRModule
 
@@ -302,6 +301,9 @@ _convert_map = {
 
 
 def sklearn_op_to_relay(op, inexpr, dshape, dtype, func_name, columns=None):
+    """
+    Convert Sklearn Ops to Relay Ops.
+    """
     classname = type(op).__name__
 
     if classname not in _convert_map:
@@ -315,8 +317,8 @@ def sklearn_op_to_relay(op, inexpr, dshape, dtype, func_name, columns=None):
 
     if classname == "ColumnTransformer":
         return _convert_map[classname][func_name](op, inexpr, dshape, dtype, func_name, columns)
-    else:
-        return _convert_map[classname][func_name](op, inexpr, dshape, dtype, columns)
+
+    return _convert_map[classname][func_name](op, inexpr, dshape, dtype, columns)
 
 
 def from_sklearn(model, shape=None, dtype="float32", func_name="transform", columns=None):
@@ -340,7 +342,7 @@ def from_auto_ml(model, shape=None, dtype="float32", func_name="transform"):
     Import scikit-learn model to Relay.
     """
     try:
-        import sklearn
+        import sklearn  # pylint: disable=unused-import
     except ImportError as e:
         raise ImportError("Unable to import scikit-learn which is required {}".format(e))
 
@@ -352,23 +354,6 @@ def from_auto_ml(model, shape=None, dtype="float32", func_name="transform"):
     else:
         transformer = model.target_transformer
         outexpr = sklearn_op_to_relay(transformer, outexpr, shape, dtype, func_name, None)
-
-    func = _function.Function(analysis.free_vars(outexpr), outexpr)
-    return IRModule.from_expr(func), []
-
-
-def from_auto_ml(model, shape=None, dtype="float32"):
-    """
-    Import automl model to Relay.
-    """
-    try:
-        import sklearn  # pylint: disable=unused-import
-    except ImportError as e:
-        raise ImportError("Unable to import scikit-learn which is required {}".format(e))
-
-    outexpr = _expr.var("input", shape=shape, dtype=dtype)
-    for _, transformer in model.feature_transformer.steps:
-        outexpr = sklearn_op_to_relay(transformer, outexpr, shape, dtype, None)
 
     func = _function.Function(analysis.free_vars(outexpr), outexpr)
     return IRModule.from_expr(func), []
