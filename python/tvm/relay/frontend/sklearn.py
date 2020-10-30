@@ -124,7 +124,8 @@ def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
     out = []
     for _, pipe, cols in op.transformers_:
         mod = pipe.steps[0][1]
-        out.append(sklearn_op_to_relay(mod, inexpr, dshape, dtype, func_name, cols))
+        op_type = column_transformer_op_types[type(mod).__name__]
+        out.append(sklearn_op_to_relay(mod, inexpr[op_type], dshape, dtype, func_name, cols))
 
     return _op.concatenate(out, axis=1)
 
@@ -313,6 +314,14 @@ _convert_map = {
     "PCA": {"transform": _PCA},
 }
 
+INPUT_FLOAT = 0
+INPUT_STRING = 1
+
+column_transformer_op_types =  {
+  "RobustImputer": INPUT_FLOAT,
+  "ThresholdOneHotEncoder": INPUT_STRING,
+}
+
 
 def sklearn_op_to_relay(op, inexpr, dshape, dtype, func_name, columns=None):
     """
@@ -361,12 +370,20 @@ def from_auto_ml(model, shape=None, dtype="float32", func_name="transform"):
         raise ImportError(
             "Unable to import scikit-learn which is required {}".format(e))
 
-    outexpr = _expr.var("input", shape=shape, dtype=dtype)
 
     if func_name == "transform":
+        inexpr_float = _expr.var("input_float", shape=shape, dtype=dtype)
+        inexpr_string = _expr.var("input_string", shape=shape, dtype=dtype)
+        inexpr = [inexpr_float, inexpr_string]
+
+        if type(model.feature_transformer.steps[0][1]).__name__ != "ColumnTransformer":
+            raise NameError("The First Transformer must be an ColumnTransformer, but {} is given".format(type(transformer).__name__))
+
+        outexpr = inexpr
         for _, transformer in model.feature_transformer.steps:
             outexpr = sklearn_op_to_relay(transformer, outexpr, shape, dtype, func_name, None)
     else:
+        inexpr = _expr.var("input", shape=shape, dtype=dtype)
         transformer = model.target_transformer
         outexpr = sklearn_op_to_relay(transformer, outexpr, shape, dtype, func_name, None)
 
