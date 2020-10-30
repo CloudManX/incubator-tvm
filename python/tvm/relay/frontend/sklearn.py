@@ -230,8 +230,24 @@ def _TfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
         ret = _op.nn.l2_normalize(tfidf, eps=.0001, axis=[1])
     else:
         ret = _op.nn.l2_normalize(inexpr, eps=.0001, axis=[1])
-    
     return ret
+
+def _MultiColumnTfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
+    out = []
+    data_rows = _op.split(inexpr,dshape[0],axis=0)
+    for i in range(dshape[0]):
+        if op.vectorizers_[i]:
+            dshape_i = _op.shape_of(data_rows[i])
+            tfidf_features = _TfidfVectorizer(op.vectorizers_[i],data_rows[i],dshape_i, dtype)
+            # if op.vocabulary_sizes and tfidf_features.shape[1] < op.vocabulary_sizes[i]:
+            #     tfidf_features = sp.csr_matrix(
+            #         (tfidf_features.data, tfidf_features.indices, tfidf_features.indptr),
+            #         shape=(tfidf_features.shape[0], op.vocabulary_sizes[i]),
+            #     )
+            out.append(tfidf_features)
+    ret = _op.stack(out, axis=1)
+    return ret
+
 
 def _PCA(op, inexpr, dshape, dtype, columns=None):
     eigvec = _op.const(np.array(op.components_, dtype))
@@ -250,6 +266,7 @@ _convert_map = {
     'RobustStandardScaler': _RobustStandardScaler,
     'ThresholdOneHotEncoder': _ThresholdOneHotEncoder,
     'TfidfVectorizer': _TfidfVectorizer,
+    'MultiColumnTfidfVectorizer': _MultiColumnTfidfVectorizer,
     'PCA': _PCA
 }
 

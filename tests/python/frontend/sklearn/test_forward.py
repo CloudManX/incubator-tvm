@@ -21,10 +21,11 @@ from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, KBinsDiscretizer
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sagemaker_sklearn_extension.impute import RobustImputer
 from sagemaker_sklearn_extension.preprocessing import RobustStandardScaler, ThresholdOneHotEncoder, RobustOrdinalEncoder, NALabelEncoder
-
+from sagemaker_sklearn_extension.feature_extraction.text import MultiColumnTfidfVectorizer
+from sklearn.utils.validation import check_array
 from tvm import topi
 import tvm.topi.testing
 import tvm
@@ -49,8 +50,8 @@ class SklearnTestHelper:
         self.ex = relay.create_executor('vm', mod=mod, ctx=self.ctx, target=self.target)
         
     def run(self, data):
-       result = self.ex.evaluate()(data)
-       return result.asnumpy()
+        result = self.ex.evaluate()(data)
+        return result.asnumpy()
 
 def _test_model_impl(helper, model, dshape, input_data):
     helper.compile(model, dshape, 'float32')
@@ -122,13 +123,13 @@ def test_column_transfomer():
     dshape = (relay.Any(), relay.Any())
     _test_model_impl(st_helper, ct, dshape, data)
 
-# def test_robust_ordinal_encoder():
-#     st_helper = SklearnTestHelper()
-#     roe = RobustOrdinalEncoder()
-#     data = np.array([[0,1],[0,4],[1,2],[1,10]], dtype=np.float32)
-#     roe.fit(data)
-#     dshape = (relay.Any(), len(data[0]))
-#     _test_model_impl(st_helper, roe, dshape, data)
+def test_robust_ordinal_encoder():
+    st_helper = SklearnTestHelper()
+    roe = RobustOrdinalEncoder()
+    data = np.array([[0,1],[0,4],[1,2],[1,10]], dtype=np.float32)
+    roe.fit(data)
+    dshape = (relay.Any(), len(data[0]))
+    _test_model_impl(st_helper, roe, dshape, data)
 
 def test_na_label_encoder():
     st_helper = SklearnTestHelper()
@@ -149,7 +150,7 @@ def test_standard_scaler():
 
 def test_kbins_discretizer():
     st_helper = SklearnTestHelper()
-    kd = KBinsDiscretizer(n_bins=3, encode='ordinal', strategy='uniform')
+    kd = KBinsDiscretizer(n_bins=2, encode='ordinal', strategy='uniform')
     data = np.array([[-2, 1, -4,   -1],
                     [-1, 2, -3, -0.5],
                     [ 0, 3, -2,  0.5],
@@ -158,21 +159,43 @@ def test_kbins_discretizer():
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, kd, dshape, data)
 
-# def test_tfidf_vectorizer():
-#     st_helper = SklearnTestHelper()
-#     tiv = TfidfVectorizer()
-#     data = [
-#         'This is the first document.',
-#         'This document is the second document.',
-#         'And this is the third one.',
-#         'Is this the first document?',
-#     ]
-    
-#     dshape = (relay.Any(), len(data))
-#     st_helper.compile(tiv, dshape, 'int32')
-#     sklearn_out = tiv.fit_transform(data).toarray()
-#     tvm_out = st_helper.run(data)
-#     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
+def test_tfidf_vectorizer():
+    st_helper = SklearnTestHelper()
+    tiv = TfidfVectorizer()
+    corpus = [
+        'This is the first document.',
+        'This document is the second document.',
+        'And this is the third one.',
+        'Is this the first document?',
+    ]
+    sklearn_out = tiv.fit_transform(corpus).toarray()
+    vectorizer = CountVectorizer(dtype=np.float32)
+    X = vectorizer.fit_transform(corpus)
+    data = X.toarray()
+    dshape = (relay.Any(), len(data[0]))
+    st_helper.compile(tiv, dshape, 'float32')
+    tvm_out = st_helper.run(data)
+    tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
+
+def test_multicolumn_tfidf_vectorizer():
+    st_helper = SklearnTestHelper()
+    mctiv = MultiColumnTfidfVectorizer()
+    corpus = [[
+        'This is the first document.',
+        'This document is the second document.',],[
+        'And this is the third one.',
+        'Is this the first document?',]
+    ]
+    X = [['This is the first document.','And this is the third one.',],['This document is the second document.','Is this the first document?',]]
+    mctiv.fit(corpus)
+    sklearn_out = mctiv.transform(corpus)
+    Y = check_array(corpus)
+    vectorizer1, vectorizer2 = CountVectorizer(dtype=np.float32),CountVectorizer(dtype=np.float32)
+    data = (vectorizer1.fit_transform(X[0]).toarray(),vectorizer2.fit_transform(X[1]).toarray())
+    dshape = (2, relay.Any())
+    st_helper.compile(mctiv, dshape, 'float32')
+    tvm_out = st_helper.run(data)
+    tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
 def test_pca():
     st_helper = SklearnTestHelper()
@@ -192,5 +215,6 @@ if __name__ == '__main__':
     test_na_label_encoder()
     test_standard_scaler()
     test_kbins_discretizer()
-    # test_tfidf_vectorizer()
+    test_tfidf_vectorizer()
+    # test_multicolumn_tfidf_vectorizer()
     test_pca()
