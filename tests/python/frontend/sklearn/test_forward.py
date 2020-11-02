@@ -22,6 +22,8 @@ from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, KBinsDiscretizer
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sagemaker_sklearn_extension.externals import AutoMLTransformer
+from sagemaker_sklearn_extension.externals import Header
 from sagemaker_sklearn_extension.impute import RobustImputer
 from sagemaker_sklearn_extension.preprocessing import (
     RobustStandardScaler,
@@ -58,9 +60,11 @@ class SklearnTestHelper:
        result = self.ex.evaluate()(data)
        return result.asnumpy()
 
-def _test_model_impl(helper, model, dshape, input_data):
-    helper.compile(model, dshape, "float32", "transform")
-    if type(model).__name__ == "ThresholdOneHotEncoder":
+def _test_model_impl(helper, model, dshape, input_data, auto_ml=False):
+    helper.compile(model, dshape, "float32", "transform", None, auto_ml)
+    if auto_ml:
+        sklearn_out = model.feature_transformer.transform(input_data)
+    elif type(model).__name__ == "ThresholdOneHotEncoder":
         sklearn_out = model.transform(input_data).toarray()
     else:
         sklearn_out = model.transform(input_data)
@@ -94,7 +98,7 @@ def test_robust_scaler():
     st_helper = SklearnTestHelper()
     rss = RobustStandardScaler()
 
-    data = np.array([[0, 0], [0, 0], [1, 1], [1, 1]], dtype=np.float32)
+    data = np.array([[-1, 0], [0, 0], [1, 1], [1, 1]], dtype=np.float32)
     rss.fit(data)
 
     dshape = (relay.Any(), len(data[0]))
@@ -111,21 +115,6 @@ def test_threshold_onehot_encoder():
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, tohe, dshape, data)
 
-def test_column_transfomer():
-    st_helper = SklearnTestHelper()
-
-    data = np.array([[4, 5, np.nan, 7], [0, np.nan, 2, 3], [8, 9, 10, 11], [np.nan, 13, 14, 15]],
-                     dtype=np.float32)
-
-    pipeline = Pipeline(steps=[('robustimputer', 
-                                RobustImputer(fill_values=np.nan, strategy='constant'))])
-    ct = ColumnTransformer(transformers=[('numeric_processing', pipeline, [0, 1, 2, 3])])
-    ct.fit(data)
-
-    dshape = (relay.Any(), relay.Any())
-    _test_model_impl(st_helper, ct, dshape, data)
-
-
 def test_inverse_label_transformer():
     st_helper = SklearnTestHelper()
     rle = RobustLabelEncoder()
@@ -140,7 +129,6 @@ def test_inverse_label_transformer():
     # of tvm in runtime as post processing
     tvm.testing.assert_allclose(data, tvm_out, rtol=1e-5, atol=1e-5)
 
-
 def test_robust_ordinal_encoder():
     st_helper = SklearnTestHelper()
     roe = RobustOrdinalEncoder()
@@ -148,7 +136,6 @@ def test_robust_ordinal_encoder():
     roe.fit(data)
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, roe, dshape, data)
-
 
 def test_na_label_encoder():
     st_helper = SklearnTestHelper()
@@ -159,7 +146,6 @@ def test_na_label_encoder():
     dshape = (relay.Any(), len(data))
     _test_model_impl(st_helper, nle, dshape, data)
 
-
 def test_kbins_discretizer():
     st_helper = SklearnTestHelper()
     kd = KBinsDiscretizer(n_bins=3, encode="ordinal", strategy="uniform")
@@ -169,7 +155,6 @@ def test_kbins_discretizer():
     kd.fit(data)
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, kd, dshape, data)
-
 
 # def test_tfidf_vectorizer():
 #     st_helper = SklearnTestHelper()
@@ -187,7 +172,6 @@ def test_kbins_discretizer():
 #     tvm_out = st_helper.run(data)
 #     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
-
 def test_pca():
     st_helper = SklearnTestHelper()
     pca = PCA(n_components=2)
@@ -196,12 +180,36 @@ def test_pca():
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, pca, dshape, data)
 
+def test_automl():
+    st_helper = SklearnTestHelper()
+
+    data = np.array(
+        [[4, 5, np.nan, 7], [0, np.nan, 2, 3], [8, 9, 10, 11], [np.nan, 13, 14, 15]],
+        dtype=np.float32,
+    )
+
+    pipeline = Pipeline(
+        steps=[("robustimputer", RobustImputer(fill_values=np.nan, strategy="constant"))]
+    )
+
+    ct = ColumnTransformer(transformers=[("numeric_processing", pipeline, [0, 1, 2, 3])])
+    ct.fit(data)
+
+    pipeline = Pipeline(steps=[("column_transformer", ct)])
+    header = Header(column_names=["x1", "x2", "x3", "class"], target_column_name="class")
+
+    na = NALabelEncoder()
+    na.fit(data)
+
+    automl_transformer = AutoMLTransformer(header, pipeline, na)
+
+    dshape = (relay.Any(), relay.Any())
+    _test_model_impl(st_helper, automl_transformer, dshape, data, auto_ml=True)
 
 if __name__ == "__main__":
     test_simple_imputer()
     test_robust_imputer()
     test_robust_scaler()
-    test_column_transfomer()
     test_threshold_onehot_encoder()
     test_inverse_label_transformer()
     test_robust_ordinal_encoder()
@@ -209,3 +217,4 @@ if __name__ == "__main__":
     test_kbins_discretizer()
     # test_tfidf_vectorizer()
     test_pca()
+    test_automl()

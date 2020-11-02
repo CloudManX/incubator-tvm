@@ -317,9 +317,9 @@ _convert_map = {
 INPUT_FLOAT = 0
 INPUT_STRING = 1
 
-column_transformer_op_types =  {
-  "RobustImputer": INPUT_FLOAT,
-  "ThresholdOneHotEncoder": INPUT_STRING,
+column_transformer_op_types = {
+    "RobustImputer": INPUT_FLOAT,
+    "ThresholdOneHotEncoder": INPUT_STRING,
 }
 
 
@@ -353,6 +353,9 @@ def from_sklearn(model, shape=None, dtype="float32", func_name="transform", colu
     except ImportError as e:
         raise ImportError("Unable to import scikit-learn which is required {}".format(e))
 
+    if type(model).__name__ == "ColumnTransformer":
+        raise NameError("ColumnTransformer is not supported for single op compilation.")
+
     inexpr = _expr.var("input", shape=shape, dtype=dtype)
     outexpr = sklearn_op_to_relay(model, inexpr, shape, dtype, func_name, columns)
 
@@ -370,14 +373,17 @@ def from_auto_ml(model, shape=None, dtype="float32", func_name="transform"):
         raise ImportError(
             "Unable to import scikit-learn which is required {}".format(e))
 
-
     if func_name == "transform":
         inexpr_float = _expr.var("input_float", shape=shape, dtype=dtype)
         inexpr_string = _expr.var("input_string", shape=shape, dtype=dtype)
         inexpr = [inexpr_float, inexpr_string]
 
         if type(model.feature_transformer.steps[0][1]).__name__ != "ColumnTransformer":
-            raise NameError("The First Transformer must be an ColumnTransformer, but {} is given".format(type(transformer).__name__))
+            raise NameError(
+                "The First Transformer must be an ColumnTransformer, but {} is given".format(
+                    type(transformer).__name__
+                )
+            )
 
         outexpr = inexpr
         for _, transformer in model.feature_transformer.steps:
