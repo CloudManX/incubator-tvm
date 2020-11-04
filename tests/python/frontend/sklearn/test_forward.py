@@ -42,8 +42,9 @@ from tvm import relay
 from tvm.contrib import graph_runtime
 import scipy
 
+
 class SklearnTestHelper:
-    def __init__(self, target='llvm', ctx=tvm.cpu(0)):
+    def __init__(self, target="llvm", ctx=tvm.cpu(0)):
         self.compiled_model = None
         self.target = target
         self.ctx = ctx
@@ -54,11 +55,12 @@ class SklearnTestHelper:
         else:
             mod, _ = relay.frontend.from_sklearn(model, dshape, dtype, func_name, columns)
 
-        self.ex = relay.create_executor('vm', mod=mod, ctx=self.ctx, target=self.target)
-        
+        self.ex = relay.create_executor("vm", mod=mod, ctx=self.ctx, target=self.target)
+
     def run(self, data):
-       result = self.ex.evaluate()(data)
-       return result.asnumpy()
+        result = self.ex.evaluate()(data)
+        return result.asnumpy()
+
 
 def _test_model_impl(helper, model, dshape, input_data, auto_ml=False):
     helper.compile(model, dshape, "float32", "transform", None, auto_ml)
@@ -72,27 +74,34 @@ def _test_model_impl(helper, model, dshape, input_data, auto_ml=False):
 
     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
+
 def test_simple_imputer():
     st_helper = SklearnTestHelper()
-    data = np.array([[4, 5, np.nan, 7], [0, np.nan, 2, 3], [8, 9, 10, 11], [np.nan, 13, 14, 15]],
-                     dtype=np.float32)
+    data = np.array(
+        [[4, 5, np.nan, 7], [0, np.nan, 2, 3], [8, 9, 10, 11], [np.nan, 13, 14, 15]],
+        dtype=np.float32,
+    )
 
-    imp_mean = SimpleImputer(missing_values=np.nan, strategy='median')
+    imp_mean = SimpleImputer(missing_values=np.nan, strategy="median")
     imp_mean.fit(data)
 
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, imp_mean, dshape, data)
 
+
 def test_robust_imputer():
     st_helper = SklearnTestHelper()
-    data = np.array([[4, 5, np.nan, 7], [0, np.nan, 2, 3], [8, 9, 10, 11], [np.nan, 13, 14, 15]],
-                     dtype=np.float32)
+    data = np.array(
+        [[4, 5, np.nan, 7], [0, np.nan, 2, 3], [8, 9, 10, 11], [np.nan, 13, 14, 15]],
+        dtype=np.float32,
+    )
 
     ri = RobustImputer(dtype=None, strategy="constant", fill_values=np.nan, mask_function=None)
     ri.fit(data)
 
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, ri, dshape, data)
+
 
 def test_robust_scaler():
     st_helper = SklearnTestHelper()
@@ -104,6 +113,7 @@ def test_robust_scaler():
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, rss, dshape, data)
 
+
 def test_threshold_onehot_encoder():
     st_helper = SklearnTestHelper()
     tohe = ThresholdOneHotEncoder()
@@ -111,9 +121,10 @@ def test_threshold_onehot_encoder():
     data = np.array([[10, 1, 7], [11, 3, 8], [11, 2, 9]], dtype=np.float32)
     tohe.fit(data)
     tohe.categories_ = [[10, 11], [1, 2, 3], [7, 8, 9]]
-    
+
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, tohe, dshape, data)
+
 
 def test_inverse_label_transformer():
     st_helper = SklearnTestHelper()
@@ -129,6 +140,7 @@ def test_inverse_label_transformer():
     # of tvm in runtime as post processing
     tvm.testing.assert_allclose(data, tvm_out, rtol=1e-5, atol=1e-5)
 
+
 def test_robust_ordinal_encoder():
     st_helper = SklearnTestHelper()
     roe = RobustOrdinalEncoder()
@@ -136,6 +148,7 @@ def test_robust_ordinal_encoder():
     roe.fit(data)
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, roe, dshape, data)
+
 
 def test_na_label_encoder():
     st_helper = SklearnTestHelper()
@@ -146,6 +159,7 @@ def test_na_label_encoder():
     dshape = (relay.Any(), len(data))
     _test_model_impl(st_helper, nle, dshape, data)
 
+
 def test_kbins_discretizer():
     st_helper = SklearnTestHelper()
     kd = KBinsDiscretizer(n_bins=3, encode="ordinal", strategy="uniform")
@@ -155,6 +169,7 @@ def test_kbins_discretizer():
     kd.fit(data)
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, kd, dshape, data)
+
 
 # def test_tfidf_vectorizer():
 #     st_helper = SklearnTestHelper()
@@ -172,6 +187,7 @@ def test_kbins_discretizer():
 #     tvm_out = st_helper.run(data)
 #     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
+
 def test_pca():
     st_helper = SklearnTestHelper()
     pca = PCA(n_components=2)
@@ -179,6 +195,7 @@ def test_pca():
     pca.fit(data)
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, pca, dshape, data)
+
 
 def test_automl():
     st_helper = SklearnTestHelper()
@@ -205,6 +222,7 @@ def test_automl():
 
     dshape = (relay.Any(), relay.Any())
     _test_model_impl(st_helper, automl_transformer, dshape, data, auto_ml=True)
+
 
 if __name__ == "__main__":
     test_simple_imputer()

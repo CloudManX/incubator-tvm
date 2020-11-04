@@ -44,7 +44,7 @@ from .common import infer_value_simulated as _infer_value_simulated
 
 def _SimpleImputer(op, inexpr, dshape, dtype, columns=None):
     """
-    Scikit-Learn Transformer: 
+    Scikit-Learn Transformer:
     Imputation transformer for completing missing values.
     """
     boolean_mask = _op.isnan(inexpr)
@@ -54,46 +54,46 @@ def _SimpleImputer(op, inexpr, dshape, dtype, columns=None):
     reps = _op.concatenate([reps, _op.const([1])], axis=0)
 
     fill_val = _op.tile(fill_col, reps=reps)
-    indices =_op.const(np.arange(len(op.statistics_)))
+    indices = _op.const(np.arange(len(op.statistics_)))
     fill_val = _op.take(fill_val, indices=indices, axis=1)
 
-    ret = _op.where(boolean_mask,
-                    fill_val,
-                    inexpr)
-    
+    ret = _op.where(boolean_mask, fill_val, inexpr)
+
     return ret
+
 
 def _RobustImputer(op, inexpr, dshape, dtype, columns=None):
     """
-    Sagemaker-Scikit-Learn-Extension Transformer: 
+    Sagemaker-Scikit-Learn-Extension Transformer:
     Imputation transformer for completing missing values with multi-column support.
     """
-    if columns: 
+    if columns:
         column_indices = _op.const(columns)
         inexpr = _op.take(inexpr, indices=column_indices, axis=1)
 
     if op.mask_function is not None:
         inf_mask = _op.isinf(inexpr)
         nan_val = _op.full_like(inexpr, _op.const(np.array(np.nan, dtype=dtype)))
-        inexpr = _op.where(inf_mask, nan_val, inexpr) 
+        inexpr = _op.where(inf_mask, nan_val, inexpr)
     ret = _SimpleImputer(op.simple_imputer_, inexpr, dshape, dtype, columns)
 
-    return ret 
-    
+    return ret
+
+
 def _ThresholdOneHotEncoder(op, inexpr, dshape, dtype, columns=None):
     """
-    Sagemaker-Scikit-Learn-Extension Transformer: 
+    Sagemaker-Scikit-Learn-Extension Transformer:
     Encode categorical integer features as a one-hot numeric array, with optional restrictions on
     feature encoding.
     """
-    if columns: 
+    if columns:
         column_indices = _op.const(columns)
         inexpr = _op.take(inexpr, indices=column_indices, axis=1)
 
     num_cat = len(op.categories_)
     cols = _op.split(inexpr, num_cat, axis=1)
 
-    out = [] 
+    out = []
     for i in range(num_cat):
         category = op.categories_[i]
         cat_tensor = _op.const(np.array(category, dtype=dtype))
@@ -102,8 +102,9 @@ def _ThresholdOneHotEncoder(op, inexpr, dshape, dtype, columns=None):
         one_hot = _op.cast(one_hot_mask, dtype)
         out.append(one_hot)
 
-    ret = _op.concatenate(out, axis=1) 
+    ret = _op.concatenate(out, axis=1)
     return ret
+
 
 def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
     """
@@ -118,8 +119,8 @@ def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
 
 def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
     """
-    Scikit-Learn Compose: 
-    Applies transformers to columns of an array 
+    Scikit-Learn Compose:
+    Applies transformers to columns of an array
     """
     out = []
     for _, pipe, cols in op.transformers_:
@@ -186,9 +187,7 @@ def _RobustLabelEncoder(op, inexpr, dshape, dtype, columns=None):
 
     class_mask = []
     for i in range(len(op.classes_)):
-        val = (
-            _op.const(i, dtype) if is_inverse else _op.const(np.array(op.classes_[i], dtype), dtype)
-        )
+        val = _op.const(np.array(op.classes_[i], dtype), dtype)
         class_mask.append(_op.equal(inexpr, val))
     for i in range(len(op.classes_)):
         if is_inverse:
@@ -370,8 +369,7 @@ def from_auto_ml(model, shape=None, dtype="float32", func_name="transform"):
     try:
         import sklearn
     except ImportError as e:
-        raise ImportError(
-            "Unable to import scikit-learn which is required {}".format(e))
+        raise ImportError("Unable to import scikit-learn which is required {}".format(e))
 
     if func_name == "transform":
         inexpr_float = _expr.var("input_float", shape=shape, dtype=dtype)
