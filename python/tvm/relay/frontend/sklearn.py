@@ -232,6 +232,7 @@ def _TfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
         ret = _op.nn.l2_normalize(inexpr, eps=.0001, axis=[1])
     return ret
 
+# Buggy - needs fix
 def _MultiColumnTfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
     out = []
     data_rows = _op.split(inexpr,dshape[0],axis=0)
@@ -248,6 +249,22 @@ def _MultiColumnTfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
     ret = _op.stack(out, axis=1)
     return ret
 
+
+def _LogExtremeValuesTransformer(op, inexpr, dshape, dtype, columns=None):
+    n_features = dshape[1]
+    # if n_features != op.n_input_features_:
+    #         raise ValueError("X shape does not match training shape.")
+    out = []
+    cols = _op.split(inexpr, n_features, axis=1)
+    for j in range(n_features):
+        if j in op.cols_to_transform_:
+            if j in op.nonnegative_cols_:
+                out.append(_op.log(_op.add(cols[j], _op.const(1, dtype))))
+            else:
+                out.append(_op.multiply(_op.sign(cols[j]),_op.log(_op.add(_op.abs(cols[j]), _op.const(1, dtype)))))
+        else:
+            out.append(cols[j])
+    return _op.stack(out, axis=1)
 
 def _PCA(op, inexpr, dshape, dtype, columns=None):
     eigvec = _op.const(np.array(op.components_, dtype))
@@ -267,6 +284,7 @@ _convert_map = {
     'ThresholdOneHotEncoder': _ThresholdOneHotEncoder,
     'TfidfVectorizer': _TfidfVectorizer,
     'MultiColumnTfidfVectorizer': _MultiColumnTfidfVectorizer,
+    'LogExtremeValuesTransformer':_LogExtremeValuesTransformer,
     'PCA': _PCA
 }
 
