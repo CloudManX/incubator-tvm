@@ -193,7 +193,7 @@ def test_kbins_discretizer():
 def test_pca():
     st_helper = SklearnTestHelper()
     pca = PCA(n_components=2)
-    tSVD = TruncatedSVD(n_components=1) 
+    tSVD = TruncatedSVD(n_components=1)
     rpca = RobustPCA()
     data = np.array([[-1, -1], [-2, -1], [-3, -2], [1, 1], [2, 1], [3, 2]], dtype=np.float32)
     pca.fit(data)
@@ -201,12 +201,15 @@ def test_pca():
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, rpca, dshape, data)
 
-    tSVD = TruncatedSVD(n_components=5, n_iter=7, random_state=42) 
-    data = sparse_random(100, 100, density=0.01, format='csr', dtype = 'float32', random_state=42).toarray()
+    tSVD = TruncatedSVD(n_components=5, n_iter=7, random_state=42)
+    data = sparse_random(
+        100, 100, density=0.01, format="csr", dtype="float32", random_state=42
+    ).toarray()
     tSVD.fit(data)
     rpca.robust_pca_ = tSVD
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, rpca, dshape, data)
+
 
 def test_automl():
     st_helper = SklearnTestHelper()
