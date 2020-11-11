@@ -364,7 +364,7 @@ def from_auto_ml(model, shape=None, dtype="float32", func_name="transform"):
         if type(model.feature_transformer.steps[0][1]).__name__ != "ColumnTransformer":
             raise NameError(
                 "The First Transformer must be an ColumnTransformer, but {} is given".format(
-                    type(transformer).__name__
+                    type(model.feature_transformer.steps[0][1]).__name__
                 )
             )
 
