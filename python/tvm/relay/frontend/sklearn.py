@@ -122,7 +122,7 @@ def _InverseLabelTransformer(op, inexpr, dshape, dtype, columns=None):
     """
     if len(dshape) > 2:
         raise ValueError(
-            "The dim for input shape for inverse label transformer should be 1 or 2, {} is given".format(
+            "Dim of Input for InverseLabelTransformer should be 1 or 2, {} is given".format(
                 len(dshape)
             )
         )
