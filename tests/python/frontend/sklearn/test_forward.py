@@ -16,15 +16,17 @@
 # under the License.
 import numpy as np
 
+from scipy.sparse import random as sparse_random
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.preprocessing import StandardScaler, KBinsDiscretizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sagemaker_sklearn_extension.externals import AutoMLTransformer
 from sagemaker_sklearn_extension.externals import Header
 from sagemaker_sklearn_extension.impute import RobustImputer
+from sagemaker_sklearn_extension.decomposition import RobustPCA
 from sagemaker_sklearn_extension.preprocessing import (
     RobustStandardScaler,
     ThresholdOneHotEncoder,
@@ -191,10 +193,22 @@ def test_kbins_discretizer():
 def test_pca():
     st_helper = SklearnTestHelper()
     pca = PCA(n_components=2)
+    tSVD = TruncatedSVD(n_components=1)
+    rpca = RobustPCA()
     data = np.array([[-1, -1], [-2, -1], [-3, -2], [1, 1], [2, 1], [3, 2]], dtype=np.float32)
     pca.fit(data)
+    rpca.robust_pca_ = pca
     dshape = (relay.Any(), len(data[0]))
-    _test_model_impl(st_helper, pca, dshape, data)
+    _test_model_impl(st_helper, rpca, dshape, data)
+
+    tSVD = TruncatedSVD(n_components=5, n_iter=7, random_state=42)
+    data = sparse_random(
+        100, 100, density=0.01, format="csr", dtype="float32", random_state=42
+    ).toarray()
+    tSVD.fit(data)
+    rpca.robust_pca_ = tSVD
+    dshape = (relay.Any(), len(data[0]))
+    _test_model_impl(st_helper, rpca, dshape, data)
 
 
 def test_automl():

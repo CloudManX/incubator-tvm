@@ -274,12 +274,12 @@ def _TfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
     return ret
 
 
-def _PCA(op, inexpr, dshape, dtype, columns=None):
+def _RobustPCA(op, inexpr, dshape, dtype, columns=None):
     """
     Scikit-Learn Transformer:
     PCA transformation with existing eigen vector.
     """
-    eigvec = _op.const(np.array(op.components_, dtype))
+    eigvec = _op.const(np.array(op.robust_pca_.components_, dtype))
     ret = _op.nn.dense(inexpr, eigvec)
     return ret
 
@@ -295,7 +295,7 @@ _convert_map = {
     "RobustOrdinalEncoder": {"transform": _RobustOrdinalEncoder},
     "KBinsDiscretizer": {"transform": _KBinsDiscretizer},
     "TfidfVectorizer": {"transform": _TfidfVectorizer},
-    "PCA": {"transform": _PCA},
+    "RobustPCA": {"transform": _RobustPCA},
 }
 
 INPUT_FLOAT = 0
