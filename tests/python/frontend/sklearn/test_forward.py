@@ -193,7 +193,6 @@ def test_kbins_discretizer():
 def test_pca():
     st_helper = SklearnTestHelper()
     pca = PCA(n_components=2)
-    tSVD = TruncatedSVD(n_components=1)
     rpca = RobustPCA()
     data = np.array([[-1, -1], [-2, -1], [-3, -2], [1, 1], [2, 1], [3, 2]], dtype=np.float32)
     pca.fit(data)
