@@ -128,21 +128,6 @@ def test_threshold_onehot_encoder():
     _test_model_impl(st_helper, tohe, dshape, data)
 
 
-def test_inverse_label_transformer():
-    st_helper = SklearnTestHelper()
-    rle = RobustLabelEncoder()
-
-    data = np.array([1, 2, 3, 4, 5], dtype=np.int32)
-    rle.fit(data)
-
-    dshape = (len(data),)
-    st_helper.compile(rle, dshape, "int32", "inverse_transform")
-    tvm_out = st_helper.run(data)
-    # identity transformation, because of the string input, the actually encoding happens outside
-    # of tvm in runtime as post processing
-    tvm.testing.assert_allclose(data, tvm_out, rtol=1e-5, atol=1e-5)
-
-
 def test_robust_ordinal_encoder():
     st_helper = SklearnTestHelper()
     roe = RobustOrdinalEncoder()
@@ -237,15 +222,36 @@ def test_automl():
     _test_model_impl(st_helper, automl_transformer, dshape, data, auto_ml=True)
 
 
+def test_inverse_label_transformer():
+    st_helper = SklearnTestHelper()
+    rle = RobustLabelEncoder()
+
+    # Binary Classification
+    data = np.random.random_sample((10,)).astype(np.float32)
+    dshape = (relay.Any(),)
+    st_helper.compile(rle, dshape, "float32", "inverse_transform")
+    python_out = (data > 0.5).astype(int)
+    tvm_out = st_helper.run(data)
+    tvm.testing.assert_allclose(python_out, tvm_out, rtol=1e-5, atol=1e-5)
+
+    # Multiclass Classification
+    data = np.random.random_sample((10, 5)).astype(np.float32)
+    dshape = (relay.Any(), 5)
+    st_helper.compile(rle, dshape, "float32", "inverse_transform")
+    python_out = np.argmax(data, axis=1)
+    tvm_out = st_helper.run(data)
+    tvm.testing.assert_allclose(python_out, tvm_out, rtol=1e-5, atol=1e-5)
+
+
 if __name__ == "__main__":
     test_simple_imputer()
     test_robust_imputer()
     test_robust_scaler()
     test_threshold_onehot_encoder()
-    test_inverse_label_transformer()
     test_robust_ordinal_encoder()
     test_na_label_encoder()
     test_kbins_discretizer()
     # test_tfidf_vectorizer()
     test_pca()
     test_automl()
+    test_inverse_label_transformer()

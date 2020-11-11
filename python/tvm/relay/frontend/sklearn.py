@@ -120,7 +120,19 @@ def _InverseLabelTransformer(op, inexpr, dshape, dtype, columns=None):
     """
     Identity transformation of the label data. The conversion to string happens in runtime.
     """
-    return _op.copy(inexpr)
+    if len(dshape) > 2:
+        raise ValueError(
+            "The dim for input shape for inverse label transformer should be 1 or 2, {} is given".format(
+                len(dshape)
+            )
+        )
+
+    if len(dshape) == 1:
+        ret = _op.cast(_op.greater(inexpr, _op.const(0.5)), "int32")
+    else:
+        ret = _op.argmax(inexpr, axis=1)
+
+    return ret
 
 
 def _RobustOrdinalEncoder(op, inexpr, dshape, dtype, columns=None):
