@@ -141,7 +141,7 @@ def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
     """
     out = []
     for _, pipe, cols in op.transformers_:
-        if pipe == 'drop':
+        if pipe == "drop":
             continue
         mod = pipe.steps[0][1]
         op_type = column_transformer_op_types[type(mod).__name__]
