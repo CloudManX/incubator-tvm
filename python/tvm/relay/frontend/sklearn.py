@@ -102,6 +102,18 @@ def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
     return ret
 
 
+def _FeatureUnion(op, inexpr, dshape, dtype, func_name, columns=None):
+    """
+    Scikit-Learn Compose:
+    Concatenates results of multiple transformer objects.
+    """
+    out = []
+    for _, mod in op.transformer_list:
+        out.append(sklearn_op_to_relay(mod, inexpr, dshape, dtype, func_name, None))
+
+    return _op.concatenate(out, axis=1)
+
+
 def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
     """
     Scikit-Learn Compose:
@@ -292,7 +304,13 @@ def _RobustPCA(op, inexpr, dshape, dtype, columns=None):
     PCA transformation with existing eigen vector.
     """
     eigvec = _op.const(np.array(op.robust_pca_.components_, dtype))
+
+    if type(op.robust_pca_).__name__ == "PCA":
+        mean = _op.const(np.array(op.robust_pca_.mean_, dtype))
+        inexpr = _op.subtract(inexpr, mean)
+
     ret = _op.nn.dense(inexpr, eigvec)
+
     return ret
 
 
@@ -308,6 +326,7 @@ _convert_map = {
     "KBinsDiscretizer": {"transform": _KBinsDiscretizer},
     "TfidfVectorizer": {"transform": _TfidfVectorizer},
     "RobustPCA": {"transform": _RobustPCA},
+    "FeatureUnion": {"transform": _FeatureUnion},
 }
 
 INPUT_FLOAT = 0
@@ -334,7 +353,7 @@ def sklearn_op_to_relay(op, inexpr, dshape, dtype, func_name, columns=None):
             )
         )
 
-    if classname == "ColumnTransformer":
+    if classname == "ColumnTransformer" or classname == "FeatureUnion":
         return _convert_map[classname][func_name](op, inexpr, dshape, dtype, func_name, columns)
 
     return _convert_map[classname][func_name](op, inexpr, dshape, dtype, columns)

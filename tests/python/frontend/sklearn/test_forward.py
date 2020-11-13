@@ -17,7 +17,7 @@
 import numpy as np
 
 from scipy.sparse import random as sparse_random
-from sklearn.pipeline import Pipeline
+from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import PCA, TruncatedSVD
@@ -222,6 +222,18 @@ def test_automl():
     _test_model_impl(st_helper, automl_transformer, dshape, data, auto_ml=True)
 
 
+def test_feature_union():
+    st_helper = SklearnTestHelper()
+    rPCA = RobustPCA(n_components=2)
+    tSVD = RobustPCA(n_components=1)
+    tSVD.robust_pca_ = TruncatedSVD(n_components=1)
+    union = FeatureUnion([("pca", rPCA), ("svd", tSVD)])
+    data = np.array([[0.0, 1.0, 3], [2.0, 2.0, 5]], dtype=np.float32)
+    union.fit(data)
+    dshape = (relay.Any(), len(data[0]))
+    _test_model_impl(st_helper, union, dshape, data)
+
+
 def test_inverse_label_transformer():
     st_helper = SklearnTestHelper()
     rle = RobustLabelEncoder()
@@ -254,4 +266,5 @@ if __name__ == "__main__":
     # test_tfidf_vectorizer()
     test_pca()
     test_automl()
+    test_feature_union()
     test_inverse_label_transformer()
