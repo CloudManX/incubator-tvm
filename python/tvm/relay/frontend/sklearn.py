@@ -32,7 +32,7 @@ def _SimpleImputer(op, inexpr, dshape, dtype, columns=None):
     Scikit-Learn Transformer:
     Imputation transformer for completing missing values.
     """
-    boolean_mask = _op.isnan(inexpr)
+    boolean_mask = _op.logical_or(_op.isnan(inexpr), _op.isinf(inexpr))
     fill_col = _op.const(np.array(op.statistics_, dtype=dtype))
     input_shape = _op.shape_of(inexpr)
     reps = _op.take(input_shape, _op.const([0]))
@@ -56,11 +56,21 @@ def _RobustImputer(op, inexpr, dshape, dtype, columns=None):
         column_indices = _op.const(columns)
         inexpr = _op.take(inexpr, indices=column_indices, axis=1)
 
-    if op.mask_function is not None:
-        inf_mask = _op.isinf(inexpr)
-        nan_val = _op.full_like(inexpr, _op.const(np.array(np.nan, dtype=dtype)))
-        inexpr = _op.where(inf_mask, nan_val, inexpr)
     ret = _SimpleImputer(op.simple_imputer_, inexpr, dshape, dtype, columns)
+
+    return ret
+
+
+def _RobustMissingIndicator(op, inexpr, dshape, dtype, columns=None):
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer:
+    Imputation transformer for completing missing values with multi-column support.
+    """
+    if columns:
+        column_indices = _op.const(columns)
+        inexpr = _op.take(inexpr, indices=column_indices, axis=1)
+
+    ret = _op.logical_or(_op.isnan(inexpr), _op.isinf(inexpr))
 
     return ret
 
@@ -325,6 +335,7 @@ _convert_map = {
     "RobustOrdinalEncoder": {"transform": _RobustOrdinalEncoder},
     "KBinsDiscretizer": {"transform": _KBinsDiscretizer},
     "TfidfVectorizer": {"transform": _TfidfVectorizer},
+    "RobustMissingIndicator": {"transform": _RobustMissingIndicator},
     "RobustPCA": {"transform": _RobustPCA},
     "FeatureUnion": {"transform": _FeatureUnion},
 }
@@ -334,6 +345,7 @@ INPUT_STRING = 1
 
 column_transformer_op_types = {
     "RobustImputer": INPUT_FLOAT,
+    "Robust": INPUT_FLOAT,
     "ThresholdOneHotEncoder": INPUT_STRING,
 }
 
