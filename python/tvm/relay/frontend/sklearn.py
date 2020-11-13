@@ -141,9 +141,11 @@ def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
     """
     out = []
     for _, pipe, cols in op.transformers_:
+        if pipe == 'drop':
+            continue
         mod = pipe.steps[0][1]
         op_type = column_transformer_op_types[type(mod).__name__]
-        out.append(sklearn_op_to_relay(mod, inexpr[op_type], dshape, dtype, func_name, cols))
+        out.append(sklearn_op_to_relay(pipe, inexpr[op_type], dshape, dtype, func_name, cols))
 
     return _op.concatenate(out, axis=1)
 
@@ -357,7 +359,6 @@ INPUT_STRING = 1
 column_transformer_op_types = {
     "RobustImputer": INPUT_FLOAT,
     "RobustMissingIndicator": INPUT_FLOAT,
-    "Pipeline": INPUT_FLOAT,
     "FeatureUnion": INPUT_FLOAT,
     "RobustStandardScaler": INPUT_FLOAT,
     "ThresholdOneHotEncoder": INPUT_STRING,
