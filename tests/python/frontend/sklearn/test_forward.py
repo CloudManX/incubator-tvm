@@ -248,6 +248,15 @@ def test_feature_union():
     _test_model_impl(st_helper, union, dshape, data)
 
 
+def test_pipeline():
+    st_helper = SklearnTestHelper()
+    pipe = Pipeline([("imputer", RobustImputer()), ("scaler", RobustStandardScaler())])
+    data = np.array([[0.0, 1.0, 3], [2.0, 2.0, 5]], dtype=np.float32)
+    pipe.fit(data)
+    dshape = (relay.Any(), len(data[0]))
+    _test_model_impl(st_helper, pipe, dshape, data)
+
+
 def test_inverse_label_transformer():
     st_helper = SklearnTestHelper()
     rle = RobustLabelEncoder()

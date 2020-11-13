@@ -114,7 +114,7 @@ def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
 
 def _FeatureUnion(op, inexpr, dshape, dtype, func_name, columns=None):
     """
-    Scikit-Learn Compose:
+    Scikit-Learn Pipeline:
     Concatenates results of multiple transformer objects.
     """
     out = []
@@ -122,6 +122,16 @@ def _FeatureUnion(op, inexpr, dshape, dtype, func_name, columns=None):
         out.append(sklearn_op_to_relay(mod, inexpr, dshape, dtype, func_name, None))
 
     return _op.concatenate(out, axis=1)
+
+
+def _Pipeline(op, inexpr, dshape, dtype, func_name, columns=None):
+    """
+    Scikit-Learn Pipeline:
+    Pipeline of transforms with a final estimator.
+    """
+    for _, mod in op.steps:
+        inexpr = sklearn_op_to_relay(mod, inexpr, dshape, dtype, func_name, None)
+    return inexpr
 
 
 def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
@@ -338,6 +348,7 @@ _convert_map = {
     "RobustMissingIndicator": {"transform": _RobustMissingIndicator},
     "RobustPCA": {"transform": _RobustPCA},
     "FeatureUnion": {"transform": _FeatureUnion},
+    "Pipeline": {"transform": _Pipeline},
 }
 
 INPUT_FLOAT = 0
@@ -345,7 +356,10 @@ INPUT_STRING = 1
 
 column_transformer_op_types = {
     "RobustImputer": INPUT_FLOAT,
-    "Robust": INPUT_FLOAT,
+    "RobustMissingIndicator": INPUT_FLOAT,
+    "Pipeline": INPUT_FLOAT,
+    "FeatureUnion": INPUT_FLOAT,
+    "RobustStandardScaler": INPUT_FLOAT,
     "ThresholdOneHotEncoder": INPUT_STRING,
 }
 
@@ -365,7 +379,7 @@ def sklearn_op_to_relay(op, inexpr, dshape, dtype, func_name, columns=None):
             )
         )
 
-    if classname == "ColumnTransformer" or classname == "FeatureUnion":
+    if classname in ["ColumnTransformer", "Pipeline", "FeatureUnion"]:
         return _convert_map[classname][func_name](op, inexpr, dshape, dtype, func_name, columns)
 
     return _convert_map[classname][func_name](op, inexpr, dshape, dtype, columns)
