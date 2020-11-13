@@ -262,8 +262,8 @@ def test_inverse_label_transformer():
     rle = RobustLabelEncoder()
 
     # Binary Classification
-    data = np.random.random_sample((10,)).astype(np.float32)
-    dshape = (relay.Any(),)
+    data = np.random.random_sample((10, 1)).astype(np.float32)
+    dshape = (relay.Any(), 1)
     st_helper.compile(rle, dshape, "float32", "inverse_transform")
     python_out = (data > 0.5).astype(int)
     tvm_out = st_helper.run(data)

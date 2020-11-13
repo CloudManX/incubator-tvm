@@ -176,7 +176,7 @@ def _InverseLabelTransformer(op, inexpr, dshape, dtype, columns=None):
             )
         )
 
-    if len(dshape) == 1:
+    if dshape[-1] == 1:
         ret = _op.cast(_op.greater(inexpr, _op.const(0.5)), "int32")
     else:
         ret = _op.argmax(inexpr, axis=1)
