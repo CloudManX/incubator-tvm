@@ -46,7 +46,6 @@ class SklearnTestHelper:
             mod, _ = relay.frontend.from_auto_ml(model, dshape, dtype)
         else:
             mod, _ = relay.frontend.from_sklearn(model, dshape, dtype, columns)
-
         self.ex = relay.create_executor('vm', mod=mod, ctx=self.ctx, target=self.target)
         
     def run(self, data):
@@ -222,7 +221,7 @@ def test_log_extreme_values_transformer():
             [-9.0, 9.0, 9.0],
             [-10.0, 10.0, 10.0],
             [-1e5, 1e6, 11.0],
-        ]
+        ], dtype=np.float32
     )
     X_log_extreme_vals = np.column_stack(
         [log_transform(X_extreme_vals.copy()[:, 0]), log_transform(X_extreme_vals.copy()[:, 1]), X_extreme_vals[:, 2]]
@@ -230,20 +229,20 @@ def test_log_extreme_values_transformer():
     sklearn_out = levt.fit_transform(X_log_extreme_vals)
     dshape = (relay.Any(), len(X_log_extreme_vals[0]))
     st_helper.compile(levt, dshape, 'float32')
-    tvm_out = st_helper.run(data)
+    tvm_out = st_helper.run(X_log_extreme_vals)
     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
 if __name__ == '__main__':
-    test_simple_imputer()
-    test_robust_imputer()
-    test_robust_scaler()
-    test_column_transfomer()
-    test_threshold_onehot_encoder()
-    # test_robust_ordinal_encoder()
-    test_na_label_encoder()
-    test_standard_scaler()
-    test_kbins_discretizer()
-    test_tfidf_vectorizer()
-    # test_multicolumn_tfidf_vectorizer()
-    # test_log_extreme_values_transformer()
-    test_pca()
+    # test_simple_imputer()
+    # test_robust_imputer()
+    # test_robust_scaler()
+    # test_column_transfomer()
+    # test_threshold_onehot_encoder()
+    # # test_robust_ordinal_encoder()
+    # test_na_label_encoder()
+    # test_standard_scaler()
+    # test_kbins_discretizer()
+    # test_tfidf_vectorizer()
+    # # test_multicolumn_tfidf_vectorizer()
+    test_log_extreme_values_transformer()
+    # test_pca()

@@ -261,7 +261,8 @@ def _LogExtremeValuesTransformer(op, inexpr, dshape, dtype, columns=None):
             if j in op.nonnegative_cols_:
                 out.append(_op.log(_op.add(cols[j], _op.const(1, dtype))))
             else:
-                out.append(_op.multiply(_op.sign(cols[j]),_op.log(_op.add(_op.abs(cols[j]), _op.const(1, dtype)))))
+                sign_col = _op.sign(cols[j])
+                out.append(_op.multiply(sign_col,_op.log(_op.add(_op.abs(cols[j]), _op.const(1, dtype)))))
         else:
             out.append(cols[j])
     return _op.stack(out, axis=1)
@@ -296,13 +297,11 @@ def from_sklearn(model,
                  shape=None,
                  dtype="float32",
                  columns=None):
-
     try:
         import sklearn
     except ImportError as e:
         raise ImportError(
             "Unable to import scikit-learn which is required {}".format(e))
-    
     inexpr = _expr.var('input', shape=shape, dtype=dtype)
     outexpr = sklearn_op_to_relay(model, inexpr, shape, dtype, columns)
 
