@@ -55,9 +55,6 @@ def _SimpleImputer(op, inexpr, dshape, dtype, columns=None):
 
     fill_val = _op.tile(fill_col, reps=reps)
     indices = _op.const(np.arange(len(op.statistics_)))
-
-    inexpr = _op.take(inexpr, indices=indices, axis=1)
-    boolean_mask = _op.take(boolean_mask, indices=indices, axis=1)
     fill_val = _op.take(fill_val, indices=indices, axis=1)
 
     ret = _op.where(boolean_mask, fill_val, inexpr)
@@ -148,7 +145,7 @@ def _Pipeline(op, inexpr, dshape, dtype, func_name, columns=None):
     Pipeline of transforms with a final estimator.
     """
     for _, mod in op.steps:
-        inexpr = sklearn_op_to_relay(mod, inexpr, dshape, dtype, func_name, None)
+        inexpr = sklearn_op_to_relay(mod, inexpr, dshape, dtype, func_name, columns)
     return inexpr
 
 
