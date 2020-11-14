@@ -55,6 +55,9 @@ def _SimpleImputer(op, inexpr, dshape, dtype, columns=None):
 
     fill_val = _op.tile(fill_col, reps=reps)
     indices = _op.const(np.arange(len(op.statistics_)))
+
+    inexpr = _op.take(inexpr, indices=indices, axis=1)
+    boolean_mask = _op.take(boolean_mask, indices=indices, axis=1)
     fill_val = _op.take(fill_val, indices=indices, axis=1)
 
     ret = _op.where(boolean_mask, fill_val, inexpr)
