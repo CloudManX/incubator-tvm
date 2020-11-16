@@ -235,8 +235,8 @@ def _TfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
 # Buggy - needs fix
 def _MultiColumnTfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
     out = []
-    data_rows = _op.split(inexpr,dshape[0],axis=0)
-    for i in range(dshape[0]):
+    data_rows = _op.split(inexpr,dshape[1],axis=1)
+    for i in range(dshape[1]):
         if op.vectorizers_[i]:
             dshape_i = _op.shape_of(data_rows[i])
             tfidf_features = _TfidfVectorizer(op.vectorizers_[i],data_rows[i],dshape_i, dtype)
@@ -265,7 +265,8 @@ def _LogExtremeValuesTransformer(op, inexpr, dshape, dtype, columns=None):
                 out.append(_op.multiply(sign_col,_op.log(_op.add(_op.abs(cols[j]), _op.const(1, dtype)))))
         else:
             out.append(cols[j])
-    return _op.stack(out, axis=1)
+    ret = _op.reshape(_op.stack(out, axis=1), newshape=(-1, n_features))
+    return ret
 
 def _PCA(op, inexpr, dshape, dtype, columns=None):
     eigvec = _op.const(np.array(op.components_, dtype))

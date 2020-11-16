@@ -176,24 +176,24 @@ def test_tfidf_vectorizer():
     tvm_out = st_helper.run(data)
     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 # Buggy - needs fix
-# def test_multicolumn_tfidf_vectorizer():
-#     st_helper = SklearnTestHelper()
-#     mctiv = MultiColumnTfidfVectorizer()
-#     corpus = np.array(
-#         [
-#             ["Cats eat rats.", "Rats are mammals."],
-#             ["Dogs chase cats.", "Cats have ears."],
-#             ["People like dogs.", "People are mammals."],
-#             ["People hate rats.", "Rats are quite smart."],
-#         ]
-#     )
-#     mctiv.fit(corpus)
-#     sklearn_out = mctiv.transform(corpus)
-#     data = (CountVectorizer(dtype=np.float32).fit_transform(corpus[:, 0]).todense(),CountVectorizer(dtype=np.float32).fit_transform(corpus[:, 1]).todense())
-#     dshape = (2, relay.Any())
-#     st_helper.compile(mctiv, dshape, 'float32')
-#     tvm_out = st_helper.run(data)
-#     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
+def test_multicolumn_tfidf_vectorizer():
+    st_helper = SklearnTestHelper()
+    mctiv = MultiColumnTfidfVectorizer()
+    corpus = np.array(
+        [
+            ["Cats eat rats.", "Rats are mammals."],
+            ["Dogs chase cats.", "Cats have ears."],
+            ["People like dogs.", "People are mammals."],
+            ["People hate rats.", "Rats are quite smart."],
+        ]
+    )
+    mctiv.fit(corpus)
+    sklearn_out = mctiv.transform(corpus)
+    data = np.column_stack((CountVectorizer(dtype=np.float32).fit_transform(corpus[:, 0]).todense(),CountVectorizer(dtype=np.float32).fit_transform(corpus[:, 1]).todense()))
+    dshape = (relay.Any(), 1)
+    st_helper.compile(mctiv, dshape, 'float32')
+    tvm_out = st_helper.run(data)
+    tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
 def test_pca():
     st_helper = SklearnTestHelper()
@@ -203,7 +203,6 @@ def test_pca():
     dshape = (relay.Any(), len(data[0]))
     _test_model_impl(st_helper, pca, dshape, data)
 
-# Buggy - needs fix
 def test_log_extreme_values_transformer():
     st_helper = SklearnTestHelper()
     levt = LogExtremeValuesTransformer(threshold_std=2.0)
@@ -233,16 +232,16 @@ def test_log_extreme_values_transformer():
     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
 if __name__ == '__main__':
-    # test_simple_imputer()
-    # test_robust_imputer()
-    # test_robust_scaler()
-    # test_column_transfomer()
-    # test_threshold_onehot_encoder()
-    # # test_robust_ordinal_encoder()
-    # test_na_label_encoder()
-    # test_standard_scaler()
-    # test_kbins_discretizer()
-    # test_tfidf_vectorizer()
-    # # test_multicolumn_tfidf_vectorizer()
+    test_simple_imputer()
+    test_robust_imputer()
+    test_robust_scaler()
+    test_column_transfomer()
+    test_threshold_onehot_encoder()
+    # test_robust_ordinal_encoder()
+    test_na_label_encoder()
+    test_standard_scaler()
+    test_kbins_discretizer()
+    test_tfidf_vectorizer()
+    # test_multicolumn_tfidf_vectorizer()
     test_log_extreme_values_transformer()
-    # test_pca()
+    test_pca()
