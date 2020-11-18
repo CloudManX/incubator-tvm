@@ -86,7 +86,7 @@ def _RobustMissingIndicator(op, inexpr, dshape, dtype, columns=None):
         inexpr = _op.take(inexpr, indices=column_indices, axis=1)
 
     ret = _op.logical_or(_op.isnan(inexpr), _op.isinf(inexpr))
-    ret = _op.cast(ret, "float32")
+    ret = _op.cast(ret, dtype)
 
     return ret
 
