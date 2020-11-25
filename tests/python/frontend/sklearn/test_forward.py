@@ -39,6 +39,8 @@ import tvm.testing
 from tvm import te
 from tvm import relay
 from tvm.contrib import graph_runtime
+import scipy
+
 
 class SklearnTestHelper:
     def __init__(self, target="llvm", ctx=tvm.cpu(0)):
@@ -46,11 +48,12 @@ class SklearnTestHelper:
         self.target = target
         self.ctx = ctx
 
-    def compile(self, model, dshape, dtype, columns=None, auto_ml=False):
+    def compile(self, model, dshape, dtype, func_name, columns=None, auto_ml=False):
         if auto_ml:
-            mod, _ = relay.frontend.from_auto_ml(model, dshape, dtype)
+            mod, _ = relay.frontend.from_auto_ml(model, dshape, dtype, func_name)
         else:
-            mod, _ = relay.frontend.from_sklearn(model, dshape, dtype, columns)
+            mod, _ = relay.frontend.from_sklearn(model, dshape, dtype, func_name, columns)
+
         self.ex = relay.create_executor("vm", mod=mod, ctx=self.ctx, target=self.target)
 
     def run(self, data):
@@ -59,9 +62,13 @@ class SklearnTestHelper:
 
 
 def _test_model_impl(helper, model, dshape, input_data):
-    helper.compile(model, dshape, "float32")
-    sklearn_out = model.transform(input_data)
+    helper.compile(model, dshape, "float32", "transform")
+    if type(model).__name__ == "ThresholdOneHotEncoder":
+        sklearn_out = model.transform(input_data).toarray()
+    else:
+        sklearn_out = model.transform(input_data)
     tvm_out = helper.run(input_data)
+
     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
 
@@ -108,15 +115,12 @@ def test_threshold_onehot_encoder():
     st_helper = SklearnTestHelper()
     tohe = ThresholdOneHotEncoder()
 
-    data = np.array([[10, 1, 7], [11, 3, 8], [11, 2, 9]], dtype=np.int32)
+    data = np.array([[10, 1, 7], [11, 3, 8], [11, 2, 9]], dtype=np.float32)
     tohe.fit(data)
     tohe.categories_ = [[10, 11], [1, 2, 3], [7, 8, 9]]
 
     dshape = (relay.Any(), len(data[0]))
-    st_helper.compile(tohe, dshape, "int32")
-    sklearn_out = tohe.transform(data).toarray()
-    tvm_out = st_helper.run(data)
-    tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
+    _test_model_impl(st_helper, tohe, dshape, data)
 
 
 def test_column_transfomer():
@@ -135,6 +139,21 @@ def test_column_transfomer():
 
     dshape = (relay.Any(), relay.Any())
     _test_model_impl(st_helper, ct, dshape, data)
+
+
+def test_inverse_label_transformer():
+    st_helper = SklearnTestHelper()
+    rle = RobustLabelEncoder()
+
+    data = np.array([1, 2, 3, 4, 5], dtype=np.int32)
+    rle.fit(data)
+
+    dshape = (len(data),)
+    st_helper.compile(rle, dshape, "int32", "inverse_transform")
+    tvm_out = st_helper.run(data)
+    # identity transformation, because of the string input, the actually encoding happens outside
+    # of tvm in runtime as post processing
+    tvm.testing.assert_allclose(data, tvm_out, rtol=1e-5, atol=1e-5)
 
 
 def test_robust_ordinal_encoder():
@@ -156,18 +175,9 @@ def test_na_label_encoder():
     _test_model_impl(st_helper, nle, dshape, data)
 
 
-def test_standard_scaler():
-    st_helper = SklearnTestHelper()
-    ss = StandardScaler()
-    data = np.array([[0, 0], [0, 0], [1, 1], [1, 1]], dtype=np.float32)
-    ss.fit(data)
-    dshape = (relay.Any(), len(data[0]))
-    _test_model_impl(st_helper, ss, dshape, data)
-
-
 def test_kbins_discretizer():
     st_helper = SklearnTestHelper()
-    kd = KBinsDiscretizer(n_bins=2, encode="ordinal", strategy="uniform")
+    kd = KBinsDiscretizer(n_bins=3, encode="ordinal", strategy="uniform")
     data = np.array(
         [[-2, 1, -4, -1], [-1, 2, -3, -0.5], [0, 3, -2, 0.5], [1, 4, -1, 2]], dtype=np.float32
     )

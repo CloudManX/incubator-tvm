@@ -275,6 +275,10 @@ register_shape_func("sigmoid", False, elemwise_shape_func)
 register_shape_func("isnan", False, elemwise_shape_func)
 register_shape_func("isinf", False, elemwise_shape_func)
 register_shape_func("where", False, elemwise_shape_func)
+<<<<<<< HEAD
 register_shape_func("sign", False, elemwise_shape_func)
 register_shape_func("abs", False, elemwise_shape_func)
 
+=======
+register_shape_func("copy", False, elemwise_shape_func)
+>>>>>>> sklearn-frontend-updates
