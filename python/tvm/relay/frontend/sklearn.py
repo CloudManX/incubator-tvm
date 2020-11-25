@@ -16,31 +16,15 @@
 # under the License.
 # pylint: disable=invalid-name, import-self, len-as-condition, unused-argument, too-many-lines
 # pylint: disable=import-outside-toplevel
-
+"""Scikit-learn frontend."""
 import numpy as np
-import tvm
 from tvm import relay
 from tvm.ir import IRModule
 
-from ... import nd as _nd
 from .. import analysis
 from .. import expr as _expr
 from .. import function as _function
 from .. import op as _op
-from .. import vision as _vision
-
-from ..function import Function
-from ..expr import Call, Let
-from ..expr import If, Tuple, TupleGetItem
-from ..expr import RefCreate, RefRead, RefWrite
-from ..expr_functor import ExprFunctor
-from ..adt import Match, Clause
-
-from .common import AttrCvt, Renamer, ExprTable
-from .common import get_relay_op, new_var, infer_shape, infer_channels
-from .common import infer_type, get_name
-from .common import infer_value as _infer_value
-from .common import infer_value_simulated as _infer_value_simulated
 
 
 def _SimpleImputer(op, inexpr, dshape, dtype, columns=None):
@@ -110,7 +94,7 @@ def _ThresholdOneHotEncoder(op, inexpr, dshape, dtype, columns=None):
 def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
     """
     Sagemaker-Scikit-Learn-Extension Transformer:
-    Standardize features by removing the mean and scaling to unit variance
+    Standardize features by removing the mean and scaling to unit variance.
     """
     scaler = op.scaler_
     ret = _op.subtract(inexpr, _op.const(np.array(scaler.mean_, dtype), dtype))
@@ -118,7 +102,7 @@ def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
     return ret
 
 
-def _ColumnTransformer(op, inexpr, dshape, dtype, columns=None):
+def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
     """
     Scikit-Learn Compose:
     Applies transformers to columns of an array
@@ -126,37 +110,48 @@ def _ColumnTransformer(op, inexpr, dshape, dtype, columns=None):
     out = []
     for _, pipe, cols in op.transformers_:
         mod = pipe.steps[0][1]
-        out.append(sklearn_op_to_relay(mod, inexpr, dshape, dtype, cols))
+        out.append(sklearn_op_to_relay(mod, inexpr, dshape, dtype, func_name, cols))
 
     return _op.concatenate(out, axis=1)
 
 
+def _InverseLabelTransformer(op, inexpr, dshape, dtype, columns=None):
+    """
+    Identity transformation of the label data. The conversion to string happens in runtime.
+    """
+    return _op.copy(inexpr)
+
+
 def _RobustOrdinalEncoder(op, inexpr, dshape, dtype, columns=None):
-    cols = _op.split(inexpr, dshape[1], axis=1)
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer:
+    Encode categorical features as an integer array additional feature of handling unseen values.
+    The input to this transformer should be an array-like of integers or strings, denoting the
+    values taken on by categorical (discrete) features. The features are converted to ordinal
+    integers. This results in a single column of integers (0 to n_categories - 1) per feature.
+    """
+    if columns:
+        column_indices = _op.const(columns)
+        inexpr = _op.take(inexpr, indices=column_indices, axis=1)
+
+    num_cat = len(op.categories_)
+    cols = _op.split(inexpr, num_cat, axis=1)
 
     out = []
-    for i in range(dshape[1]):
+    for i in range(num_cat):
         category = op.categories_[i]
         cat_tensor = _op.const(np.array(category, dtype=dtype))
         tiled_col = _op.tile(cols[i], (1, len(category)))
         one_hot_mask = _op.equal(tiled_col, cat_tensor)
-        one_hot_shape = [dshape[0], len(category)]
-        one_hot = _op.where(
-            one_hot_mask,
-            _op.ones(shape=one_hot_shape, dtype=dtype),
-            _op.zeros(shape=one_hot_shape, dtype=dtype),
-        )
+        one_hot = _op.cast(one_hot_mask, dtype)
 
         offset = _op.const(np.arange(-1, len(category) - 1, dtype=dtype))
         zeros = _op.full_like(one_hot, _op.const(0, dtype=dtype))
         ordinal_col = _op.where(one_hot_mask, _op.add(one_hot, offset), zeros)
         ordinal = _op.expand_dims(_op.sum(ordinal_col, axis=1), -1)
 
-        # one_hot_mask_cols = _op.split(one_hot_mask, len(category), axis=1)
-        # unseen_mask = one_hot_mask_cols[0]
-        # for j in range(1, len(category)):
-        #     unseen_mask = _op.logical_or(unseen_mask, one_hot_mask_cols[j])
         seen_mask = _op.cast(_op.sum(one_hot, axis=1), dtype="bool")
+        seen_mask = _op.expand_dims(seen_mask, -1)
         extra_class = _op.full_like(ordinal, _op.const(len(category), dtype=dtype))
         robust_ordinal = _op.where(seen_mask, ordinal, extra_class)
         out.append(robust_ordinal)
@@ -166,7 +161,13 @@ def _RobustOrdinalEncoder(op, inexpr, dshape, dtype, columns=None):
 
 
 def _RobustLabelEncoder(op, inexpr, dshape, dtype, columns=None):
-    is_inverse = False
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer:
+    Encode target labels with value between 0 and n_classes-1.
+    """
+    if columns:
+        column_indices = _op.const(columns)
+        inexpr = _op.take(inexpr, indices=column_indices, axis=1)
 
     class_mask = []
     for i in range(len(op.classes_)):
@@ -204,6 +205,15 @@ def _RobustLabelEncoder(op, inexpr, dshape, dtype, columns=None):
 
 
 def _NALabelEncoder(op, inexpr, dshape, dtype, columns=None):
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer:
+    Encoder for transforming labels to NA values which encode all non-float and non-finite values
+    as NA values.
+    """
+    if columns:
+        column_indices = _op.const(columns)
+        inexpr = _op.take(inexpr, indices=column_indices, axis=1)
+
     flattened_inexpr = _op.reshape(inexpr, newshape=(-1, 1))
     # Hardcoded flattened shape to be (?, 1)
     flattened_dshape = (relay.Any(), 1)
@@ -212,13 +222,15 @@ def _NALabelEncoder(op, inexpr, dshape, dtype, columns=None):
     return ret
 
 
-def _StandardScaler(op, inexpr, dshape, dtype, columns=None):
-    ret = _op.subtract(inexpr, _op.const(np.array(op.mean_, dtype), dtype))
-    ret = _op.divide(ret, _op.const(np.array(op.scale_, dtype), dtype))
-    return ret
-
-
 def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer:
+    Standardize features by removing the mean and scaling to unit variance.
+    """
+    if columns:
+        column_indices = _op.const(columns)
+        inexpr = _op.take(inexpr, indices=column_indices, axis=1)
+
     scaler = op.scaler_
     ret = _op.subtract(inexpr, _op.const(np.array(scaler.mean_, dtype), dtype))
     ret = _op.divide(ret, _op.const(np.array(scaler.scale_, dtype), dtype))
@@ -226,9 +238,15 @@ def _RobustStandardScaler(op, inexpr, dshape, dtype, columns=None):
 
 
 def _KBinsDiscretizer(op, inexpr, dshape, dtype, columns=None):
-    bin_edges = np.transpose(np.vstack(op.bin_edges_))
-    # for bin_edge in bin_edges:
+    """
+    Scikit-Learn Transformer:
+    Bin continuous data into intervals.
+    """
+    if columns:
+        column_indices = _op.const(columns)
+        inexpr = _op.take(inexpr, indices=column_indices, axis=1)
 
+    bin_edges = np.transpose(np.vstack(op.bin_edges_))
     out = _op.full_like(inexpr, _op.const(0, dtype=dtype))
 
     for i in range(1, len(bin_edges) - 1):
@@ -241,6 +259,10 @@ def _KBinsDiscretizer(op, inexpr, dshape, dtype, columns=None):
 
 
 def _TfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
+    """
+    Scikit-Learn Transformer:
+    Transform a count matrix to a normalized tf or tf-idf representation.
+    """
     if op.use_idf:
         idf = _op.const(np.array(op.idf_, dtype=dtype), dtype=dtype)
         tfidf = _op.multiply(idf, inexpr)
@@ -254,6 +276,10 @@ def _TfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
 
 # Buggy - needs fix
 def _MultiColumnTfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer:
+    Converts collections of raw documents to a matrix of TF-IDF features
+    """
     out = []
     data_rows = _op.split(inexpr, dshape[1], axis=1)
     i = 0
@@ -272,6 +298,10 @@ def _MultiColumnTfidfVectorizer(op, inexpr, dshape, dtype, columns=None):
 
 
 def _LogExtremeValuesTransformer(op, inexpr, dshape, dtype, columns=None):
+    """
+    Sagemaker-Scikit-Learn-Extension Transformer:
+    Stateful log transformer for columns that contain "extreme" values
+    """
     n_features = dshape[1]
     # if n_features != op.n_input_features_:
     #         raise ValueError("X shape does not match training shape.")
@@ -293,56 +323,86 @@ def _LogExtremeValuesTransformer(op, inexpr, dshape, dtype, columns=None):
 
 
 def _PCA(op, inexpr, dshape, dtype, columns=None):
+    """
+    Scikit-Learn Transformer:
+    PCA transformation with existing eigen vector.
+    """
     eigvec = _op.const(np.array(op.components_, dtype))
     ret = _op.nn.dense(inexpr, eigvec)
     return ret
 
 
 _convert_map = {
-    "ColumnTransformer": _ColumnTransformer,
-    "SimpleImputer": _SimpleImputer,
-    "RobustImputer": _RobustImputer,
-    "RobustLabelEncoder": _RobustLabelEncoder,
-    "RobustOrdinalEncoder": _RobustOrdinalEncoder,
-    "NALabelEncoder": _NALabelEncoder,
-    "StandardScaler": _StandardScaler,
-    "KBinsDiscretizer": _KBinsDiscretizer,
-    "RobustStandardScaler": _RobustStandardScaler,
-    "ThresholdOneHotEncoder": _ThresholdOneHotEncoder,
-    "TfidfVectorizer": _TfidfVectorizer,
-    "MultiColumnTfidfVectorizer": _MultiColumnTfidfVectorizer,
-    "LogExtremeValuesTransformer": _LogExtremeValuesTransformer,
-    "PCA": _PCA,
+    "ColumnTransformer": {"transform": _ColumnTransformer},
+    "SimpleImputer": {"transform": _SimpleImputer},
+    "RobustImputer": {"transform": _RobustImputer},
+    "RobustStandardScaler": {"transform": _RobustStandardScaler},
+    "ThresholdOneHotEncoder": {"transform": _ThresholdOneHotEncoder},
+    "NALabelEncoder": {"transform": _NALabelEncoder, "inverse_transform": _InverseLabelTransformer},
+    "RobustLabelEncoder": {"inverse_transform": _InverseLabelTransformer},
+    "RobustOrdinalEncoder": {"transform": _RobustOrdinalEncoder},
+    "KBinsDiscretizer": {"transform": _KBinsDiscretizer},
+    "TfidfVectorizer": {"transform": _TfidfVectorizer},
+    "MultiColumnTfidfVectorizer": {"transform":_MultiColumnTfidfVectorizer},
+    "LogExtremeValuesTransformer": {"transform":_LogExtremeValuesTransformer},
+    "PCA": {"transform": _PCA},
 }
 
 
-def sklearn_op_to_relay(op, inexpr, dshape, dtype, columns=None):
+def sklearn_op_to_relay(op, inexpr, dshape, dtype, func_name, columns=None):
+    """
+    Convert Sklearn Ops to Relay Ops.
+    """
     classname = type(op).__name__
-    return _convert_map[classname](op, inexpr, dshape, dtype, columns)
+
+    if classname not in _convert_map:
+        raise NameError("Model {} not supported in scikit-learn frontend".format(classname))
+    if func_name not in _convert_map[classname]:
+        raise NameError(
+            "Function {} of Model {} not supported in scikit-learn frontend".format(
+                func_name, classname
+            )
+        )
+
+    if classname == "ColumnTransformer":
+        return _convert_map[classname][func_name](op, inexpr, dshape, dtype, func_name, columns)
+
+    return _convert_map[classname][func_name](op, inexpr, dshape, dtype, columns)
 
 
-def from_sklearn(model, shape=None, dtype="float32", columns=None):
+def from_sklearn(model, shape=None, dtype="float32", func_name="transform", columns=None):
+    """
+    Import scikit-learn model to Relay.
+    """
     try:
-        import sklearn
+        import sklearn  # pylint: disable=unused-import
     except ImportError as e:
         raise ImportError("Unable to import scikit-learn which is required {}".format(e))
+
     inexpr = _expr.var("input", shape=shape, dtype=dtype)
-    outexpr = sklearn_op_to_relay(model, inexpr, shape, dtype, columns)
+    outexpr = sklearn_op_to_relay(model, inexpr, shape, dtype, func_name, columns)
 
     func = _function.Function(analysis.free_vars(outexpr), outexpr)
     return IRModule.from_expr(func), []
 
 
-def from_auto_ml(model, shape=None, dtype="float32"):
-
+def from_auto_ml(model, shape=None, dtype="float32", func_name="transform"):
+    """
+    Import scikit-learn model to Relay.
+    """
     try:
-        import sklearn
+        import sklearn  # pylint: disable=unused-import
     except ImportError as e:
         raise ImportError("Unable to import scikit-learn which is required {}".format(e))
 
     outexpr = _expr.var("input", shape=shape, dtype=dtype)
-    for _, transformer in model.feature_transformer.steps:
-        outexpr = sklearn_op_to_relay(transformer, outexpr, shape, dtype, None)
+
+    if func_name == "transform":
+        for _, transformer in model.feature_transformer.steps:
+            outexpr = sklearn_op_to_relay(transformer, outexpr, shape, dtype, func_name, None)
+    else:
+        transformer = model.target_transformer
+        outexpr = sklearn_op_to_relay(transformer, outexpr, shape, dtype, func_name, None)
 
     func = _function.Function(analysis.free_vars(outexpr), outexpr)
     return IRModule.from_expr(func), []
