@@ -26,11 +26,13 @@ from sagemaker_sklearn_extension.impute import RobustImputer
 from sagemaker_sklearn_extension.preprocessing import (
     RobustStandardScaler,
     ThresholdOneHotEncoder,
+    RobustLabelEncoder,
     RobustOrdinalEncoder,
     NALabelEncoder,
     LogExtremeValuesTransformer,
     log_transform,
 )
+
 from sagemaker_sklearn_extension.feature_extraction.text import MultiColumnTfidfVectorizer
 from tvm import topi
 import tvm.topi.testing
@@ -199,7 +201,7 @@ def test_tfidf_vectorizer():
     vectorizer = CountVectorizer(dtype=np.float32)
     data = vectorizer.fit_transform(corpus).toarray()
     dshape = (relay.Any(), len(data[0]))
-    st_helper.compile(tiv, dshape, "float32")
+    st_helper.compile(tiv, dshape, "float32", "transform")
     tvm_out = st_helper.run(data)
     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
@@ -225,7 +227,7 @@ def test_multicolumn_tfidf_vectorizer():
         )
     )
     dshape = (relay.Any(), 1)
-    st_helper.compile(mctiv, dshape, "float32")
+    st_helper.compile(mctiv, dshape, "float32", "transform")
     tvm_out = st_helper.run(data)
     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
@@ -268,7 +270,7 @@ def test_log_extreme_values_transformer():
     )
     sklearn_out = levt.fit_transform(x_log_extreme_vals)
     dshape = (relay.Any(), len(x_log_extreme_vals[0]))
-    st_helper.compile(levt, dshape, "float32")
+    st_helper.compile(levt, dshape, "float32", "transform")
     tvm_out = st_helper.run(x_log_extreme_vals)
     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
@@ -279,9 +281,9 @@ if __name__ == "__main__":
     test_robust_scaler()
     test_column_transfomer()
     test_threshold_onehot_encoder()
+    test_inverse_label_transformer()
     test_robust_ordinal_encoder()
     test_na_label_encoder()
-    test_standard_scaler()
     test_kbins_discretizer()
     test_tfidf_vectorizer()
     # test_multicolumn_tfidf_vectorizer()
