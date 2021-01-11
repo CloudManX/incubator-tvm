@@ -230,6 +230,7 @@ def elemwise_shape_func(attrs, inputs, _):
 
 
 register_shape_func("cast", False, elemwise_shape_func)
+register_shape_func("cast_like", False, elemwise_shape_func)
 register_shape_func("zeros", False, no_data_full_shape_func)
 register_shape_func("zeros_like", False, elemwise_shape_func)
 register_shape_func("ones", False, no_data_full_shape_func)
@@ -277,5 +278,4 @@ register_shape_func("log2", False, elemwise_shape_func)
 register_shape_func("sigmoid", False, elemwise_shape_func)
 register_shape_func("isnan", False, elemwise_shape_func)
 register_shape_func("isinf", False, elemwise_shape_func)
-register_shape_func("where", False, elemwise_shape_func)
-register_shape_func("copy", False, elemwise_shape_func)
+register_shape_func("logical_not", False, elemwise_shape_func)

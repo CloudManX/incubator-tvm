@@ -29,7 +29,7 @@
 #include <tvm/relay/transform.h>
 #include <tvm/runtime/container.h>
 
-#include "pass_util.h"
+#include "pass_utils.h"
 
 namespace tvm {
 namespace relay {
@@ -69,7 +69,7 @@ class AnnotateTargetRewriter : public ExprRewriter {
       if (call && call->op == CompilerBeginOp()) {
         // Argument is already compiler begin node meaning that this is not the first time
         // running this pass, so we simply remove it and will add a new one later.
-        CHECK_EQ(call->args.size(), 1U);
+        ICHECK_EQ(call->args.size(), 1U);
         const CallNode* end = call->args[0].as<CallNode>();
         if (end->op == CompilerEndOp()) {
           arg_target = end->attrs.as<CompilerAttrs>()->compiler;
@@ -77,7 +77,13 @@ class AnnotateTargetRewriter : public ExprRewriter {
         compiler_ends.push_back(call->args[0]);
       } else if (op_expr_to_target_.find(arg) != op_expr_to_target_.end()) {
         arg_target = op_expr_to_target_[arg];
-        compiler_ends.push_back(InsertAnnotation(arg, arg_target, make_end_op));
+        // If an argument is a call node and has no argument, then it should be tensor ops such as
+        // zeros, so we treat it as input vars.
+        if (call && call->args.size() == 0) {
+          compiler_ends.push_back(arg);
+        } else {
+          compiler_ends.push_back(InsertAnnotation(arg, arg_target, make_end_op));
+        }
       } else {
         // Input vars.
         compiler_ends.push_back(arg);
@@ -113,14 +119,16 @@ class AnnotateTargetRewriter : public ExprRewriter {
      * \brief This function inserts compiler end to expr and maps the corresponding target to the
      * new expression.
      *
-     *  This function checks for expr existence within the map and inserts the annotation
+     *  This function checks for expr existence within the map and inserts the annotation.
+     *  If the expression has a free variable (e.g: relay.zeros, relay.ones) we do not insert
+     *  compiler end, since there are no compiler begins for it.
      *  Further, it propagates the target to the new expression and returns it
      *
      * \param expr A relay expression
      * \return An annotated and target-propagated relay expression.
      */
     Expr new_expr = expr;
-    if (op_expr_to_target_.find(expr) != op_expr_to_target_.end()) {
+    if (op_expr_to_target_.find(expr) != op_expr_to_target_.end() && FreeVars(expr).size() != 0) {
       new_expr = InsertAnnotation(expr, op_expr_to_target_[expr], make_end_op);
       op_expr_to_target_[new_expr] = op_expr_to_target_[expr];
     }
@@ -137,13 +145,13 @@ class AnnotateTargetRewriter : public ExprRewriter {
     if (op_node && pre->op == CompilerBeginOp()) {
       // Bypass compiler begin due to lack of target information. It will be processed
       // when the following op handling arguments.
-      CHECK_EQ(pre->args.size(), 1U);
+      ICHECK_EQ(pre->args.size(), 1U);
       return post.as<CallNode>()->args[0];
     } else if (op_node && pre->op == CompilerEndOp()) {
       // Override compiler end with the new target.
-      CHECK_EQ(pre->args.size(), 1U);
+      ICHECK_EQ(pre->args.size(), 1U);
       auto input_expr = post.as<CallNode>()->args[0];
-      CHECK(op_expr_to_target_.find(input_expr) != op_expr_to_target_.end());
+      ICHECK(op_expr_to_target_.find(input_expr) != op_expr_to_target_.end());
       return InsertAnnotation(input_expr, op_expr_to_target_[input_expr], make_end_op);
     }
     // Check prior to peeking first argument
@@ -164,13 +172,14 @@ class AnnotateTargetRewriter : public ExprRewriter {
       // TVM operators: Check target specific op checking function and add to supported_targets
       // if it is supported.
       Op op = Downcast<Op>(pre->op);
-      CHECK(op.defined());
+      ICHECK(op.defined());
       for (const auto& target : this->targets_) {
         if (!Op::HasAttrMap("target." + std::string(target))) {
           continue;
         }
         auto fannotate = Op::GetAttrMap<FTVMAnnotateTarget>("target." + std::string(target));
-        if (fannotate.count(op) && fannotate[op](pre->attrs, pre->args)) {
+        const Expr& ex = GetRef<Expr>(pre);
+        if (fannotate.count(op) && fannotate[op](ex)) {
           supported_targets.push_back(target);
         }
       }
@@ -178,7 +187,7 @@ class AnnotateTargetRewriter : public ExprRewriter {
       // Composite function: Add the target of a composite function to supported_targets
       // if it is in the target list.
       Function func = Downcast<Function>(pre->op);
-      CHECK(func.defined());
+      ICHECK(func.defined());
 
       if (auto comp_name = func->GetAttr<String>(attr::kComposite)) {
         std::string comp_name_str = comp_name.value();

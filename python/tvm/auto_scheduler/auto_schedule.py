@@ -16,16 +16,7 @@
 # under the License.
 
 """
-User interface for TVM Auto-scheduler.
-
-The basic schedule search process for TVM Auto-scheduler is designed to be:
-`Program sampling` -> `Performance Tuning`.
-
-In `Program sampling`, we use some predefined precise or heuristic rules to generate several
-initial schedules. Based on these initial starting points, we perform `Performance Tuning` which
-uses cost model based evolutionary search to select schedules with the best performance.
-
-Candidate schedules are measured against the specific hardware target.
+The user interface and tuning options of the TVM auto-scheduler.
 """
 
 import tvm._ffi
@@ -45,7 +36,7 @@ class HardwareParams(Object):
     """The parameters of target hardware used to guide the search policy
 
     TODO(jcf94): This is considered to be merged with the new Target specification:
-    https://discuss.tvm.ai/t/rfc-tvm-target-specification/6844
+    https://discuss.tvm.apache.org/t/rfc-tvm-target-specification/6844
 
     Parameters
     ----------
@@ -55,11 +46,39 @@ class HardwareParams(Object):
         The width of vector units in bytes.
     cache_line_bytes : int
         The size of cache line in bytes.
+    max_shared_memory_per_block : int
+        The max shared memory per block in bytes.
+    max_registers_per_block : int
+        The max number of register per block.
+    max_threads_per_block : int
+        The max number of threads per block.
+    max_vthread_extent : int
+        The max vthread extent.
+    warp_size : int
+        The thread numbers of a warp.
     """
 
-    def __init__(self, num_cores, vector_unit_bytes, cache_line_bytes):
+    def __init__(
+        self,
+        num_cores,
+        vector_unit_bytes,
+        cache_line_bytes,
+        max_shared_memory_per_block,
+        max_registers_per_block,
+        max_threads_per_block,
+        max_vthread_extent,
+        warp_size,
+    ):
         self.__init_handle_by_constructor__(
-            _ffi_api.HardwareParams, num_cores, vector_unit_bytes, cache_line_bytes
+            _ffi_api.HardwareParams,
+            num_cores,
+            vector_unit_bytes,
+            cache_line_bytes,
+            max_shared_memory_per_block,
+            max_registers_per_block,
+            max_threads_per_block,
+            max_vthread_extent,
+            warp_size,
         )
 
 

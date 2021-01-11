@@ -19,10 +19,10 @@
 import logging
 
 import re
-from tvm import topi
-from tvm.topi.util import get_const_int, get_const_float, get_const_tuple, get_float_tuple
+from tvm import topi, _ffi
+from tvm.topi.utils import get_const_int, get_const_float, get_const_tuple, get_float_tuple
+from tvm.target import generic_func, override_native_generic_func
 from .. import op as _op
-from ....target import generic_func, override_native_generic_func
 
 logger = logging.getLogger("strategy")
 
@@ -166,9 +166,17 @@ def schedule_bitpack(attrs, outs, target):
         return topi.generic.schedule_bitpack(outs)
 
 
+get_auto_scheduler_rewritten_layout = _ffi.get_global_func(
+    "relay.attrs.get_auto_scheduler_rewritten_layout"
+)
+
 # conv2d
 def wrap_compute_conv2d(
-    topi_compute, need_data_layout=False, need_out_layout=False, has_groups=False
+    topi_compute,
+    need_data_layout=False,
+    need_out_layout=False,
+    has_groups=False,
+    need_auto_scheduler_layout=False,
 ):
     """Wrap conv2d topi compute"""
 
@@ -179,6 +187,7 @@ def wrap_compute_conv2d(
         data_layout = attrs.get_str("data_layout")
         out_layout = attrs.get_str("out_layout")
         out_dtype = attrs.out_dtype
+        auto_scheduler_rewritten_layout = get_auto_scheduler_rewritten_layout(attrs)
         out_dtype = inputs[0].dtype if out_dtype in ("same", "") else out_dtype
         args = [inputs[0], inputs[1], strides, padding, dilation]
         if has_groups:
@@ -188,6 +197,8 @@ def wrap_compute_conv2d(
         if need_out_layout:
             args.append(out_layout)
         args.append(out_dtype)
+        if need_auto_scheduler_layout:
+            args.append(auto_scheduler_rewritten_layout)
         return [topi_compute(*args)]
 
     return _compute_conv2d
@@ -1032,19 +1043,65 @@ def schedule_argwhere(attrs, outs, target):
 
 
 # scatter
-@generic_func
-def schedule_scatter(attrs, outs, target):
-    """schedule scatter"""
-    with target:
-        return topi.generic.schedule_scatter(outs)
+@override_native_generic_func("scatter_strategy")
+def scatter_strategy(attrs, outs, out_type, target):
+    strategy = _op.OpStrategy()
+    strategy.add_implementation(
+        wrap_compute_scatter(topi.scatter),
+        wrap_topi_schedule(topi.generic.schedule_scatter),
+        name="scatter.generic",
+    )
+    return strategy
 
 
-# scatter_add
+def wrap_compute_scatter(topi_compute):
+    """Wrap scatter topi compute"""
+
+    def _compute_scatter(attrs, inputs, _):
+        return [topi_compute(inputs[0], inputs[1], inputs[2], axis=attrs.axis)]
+
+    return _compute_scatter
+
+
+@override_native_generic_func("scatter_add_strategy")
+def scatter_add_strategy(attrs, outs, out_type, target):
+    strategy = _op.OpStrategy()
+    strategy.add_implementation(
+        wrap_compute_scatter(topi.scatter_add),
+        wrap_topi_schedule(topi.generic.schedule_scatter),
+        name="scatter_add.generic",
+    )
+    return strategy
+
+
+# interpolate
 @generic_func
-def schedule_scatter_add(attrs, outs, target):
-    """schedule scatter_add"""
+def schedule_interpolate(attrs, outs, target):
+    """schedule interpolate"""
     with target:
-        return topi.generic.schedule_scatter_add(outs)
+        return topi.generic.schedule_interpolate(outs)
+
+
+# scatter_nd
+@override_native_generic_func("scatter_nd_strategy")
+def scatter_nd_strategy(attrs, inputs, out_type, target):
+    """scatter_nd generic strategy"""
+    strategy = _op.OpStrategy()
+    strategy.add_implementation(
+        wrap_compute_scatter_nd(topi.scatter_nd),
+        wrap_topi_schedule(topi.generic.schedule_extern),
+        name="scatter_nd.generic",
+    )
+    return strategy
+
+
+def wrap_compute_scatter_nd(topi_compute):
+    """Wrap scatter_nd topi compute"""
+
+    def _compute_scatter_nd(attrs, inputs, _):
+        return [topi_compute(inputs[0], inputs[1], attrs.out_shape)]
+
+    return _compute_scatter_nd
 
 
 # bitserial_conv2d

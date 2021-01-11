@@ -22,7 +22,7 @@ import numpy as np
 
 import tvm
 from tvm.ir import IRModule
-from tvm.topi.util import get_const_tuple
+from tvm.topi.utils import get_const_tuple
 
 from .. import expr as _expr
 from .. import function as _function
@@ -601,3 +601,14 @@ class Renamer(object):
         if "tvm_custom" in attrs:
             attrs.pop("tvm_custom")
         return get_relay_op(self._new_name)(*inputs, **attrs)
+
+
+def to_int_list(np_array):
+    """Convert a np array to a python int list.
+
+    Note: This function converts np.int32 to python's int.
+    If we don't do this conversion, numpy's automatic upcast will make
+    the shape / parameters be converted to int64 IntImm in relay and
+    cause problems in relay/TOPI.
+    """
+    return [int(x) for x in np_array]
