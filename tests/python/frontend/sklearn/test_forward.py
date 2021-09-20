@@ -27,6 +27,7 @@ from sagemaker_sklearn_extension.externals import AutoMLTransformer
 from sagemaker_sklearn_extension.externals import Header
 from sagemaker_sklearn_extension.impute import RobustImputer, RobustMissingIndicator
 from sagemaker_sklearn_extension.decomposition import RobustPCA
+from sagemaker_sklearn_extension.feature_extraction.text import MultiColumnTfidfVectorizer
 from sagemaker_sklearn_extension.preprocessing import (
     RobustStandardScaler,
     ThresholdOneHotEncoder,
@@ -57,7 +58,7 @@ class SklearnTestHelper:
         else:
             mod, _ = relay.frontend.from_sklearn(model, dshape, dtype, func_name, columns)
 
-        self.ex = relay.create_executor("vm", mod=mod, ctx=self.ctx, target=self.target)
+        self.ex = relay.create_executor("vm", mod=mod, device=self.ctx, target=self.target)
 
     def run(self, data):
         result = self.ex.evaluate()(data)
@@ -278,6 +279,44 @@ def test_automl():
     dshape = (relay.Any(), relay.Any())
     _test_model_impl(st_helper, automl_transformer, dshape, data, auto_ml=True)
 
+def test_automl_multicolumn_tfidifvectorizer():
+    st_helper = SklearnTestHelper()
+    mctiv = MultiColumnTfidfVectorizer()
+
+    corpus = np.array([
+        ["Cats eat rats.", "Rats are mammals."],
+        ["Dogs chase cats.", "Rats are mammals."],
+        ["People like dogs.", "Rats are mammals."],
+        ["People hate rats.", "Rats are mammals."],
+    ])
+
+    pipeline = Pipeline(
+        steps = [("multicolumnvectorizer", mctiv)]
+    )
+
+    column_transformer = ColumnTransformer(transformers=[("text_processing", pipeline, [0, 1])])
+    column_transformer.fit(corpus)
+
+    pipeline = Pipeline(steps=[("column_transformer", column_transformer)])
+    header = Header(column_names=["x1", "x2"], target_column_name="x2")
+
+    automl_transformer = AutoMLTransformer(header, pipeline, None)
+
+    dshape = [relay.Any(), relay.Any()]
+    st_helper.compile(automl_transformer, dshape, "float32", "transform", None, True)
+
+    multivec = column_transformer.transformers_[0][1].steps[0][1]
+
+    sklearn_out = mctiv.fit_transform(corpus).toarray();
+
+    input_data = []
+    for idx, sub_vec in enumerate(multivec.vectorizers_):
+        vectorizer = CountVectorizer(dtype=np.float32)
+        input_data.append(vectorizer.fit_transform(corpus[:, idx]).toarray())
+
+    tvm_out = st_helper.ex.evaluate()(input_data[0], input_data[1]).asnumpy()
+
+    tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
 
 def test_feature_union():
     st_helper = SklearnTestHelper()
