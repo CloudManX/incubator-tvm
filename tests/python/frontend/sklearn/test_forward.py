@@ -22,7 +22,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.preprocessing import StandardScaler, KBinsDiscretizer
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sagemaker_sklearn_extension.externals import AutoMLTransformer
 from sagemaker_sklearn_extension.externals import Header
 from sagemaker_sklearn_extension.impute import RobustImputer, RobustMissingIndicator
@@ -58,7 +58,7 @@ class SklearnTestHelper:
         else:
             mod, _ = relay.frontend.from_sklearn(model, dshape, dtype, func_name, columns)
 
-        self.ex = relay.create_executor("vm", mod=mod, device=self.ctx, target=self.target)
+        self.ex = relay.create_executor("vm", mod=mod, ctx=self.ctx, target=self.target)
 
     def run(self, data):
         result = self.ex.evaluate()(data)
@@ -312,7 +312,10 @@ def test_automl_multicolumn_tfidifvectorizer():
     input_data = []
     for idx, sub_vec in enumerate(multivec.vectorizers_):
         vectorizer = CountVectorizer(dtype=np.float32)
-        input_data.append(vectorizer.fit_transform(corpus[:, idx]).toarray())
+        vectorizer.vocabulary_ = sub_vec.vocabulary_
+        vectorizer.fixed_vocabulary_ = sub_vec.fixed_vocabulary_
+        vectorizer.stop_words_ = sub_vec.stop_words_
+        input_data.append(vectorizer.transform(corpus[:, idx]).toarray())
 
     tvm_out = st_helper.ex.evaluate()(input_data[0], input_data[1]).asnumpy()
 
