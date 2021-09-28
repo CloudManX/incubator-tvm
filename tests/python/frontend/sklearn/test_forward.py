@@ -279,20 +279,21 @@ def test_automl():
     dshape = (relay.Any(), relay.Any())
     _test_model_impl(st_helper, automl_transformer, dshape, data, auto_ml=True)
 
+
 def test_automl_multicolumn_tfidifvectorizer():
     st_helper = SklearnTestHelper()
     mctiv = MultiColumnTfidfVectorizer()
 
-    corpus = np.array([
-        ["Cats eat rats.", "Rats are mammals."],
-        ["Dogs chase cats.", "Rats are mammals."],
-        ["People like dogs.", "Rats are mammals."],
-        ["People hate rats.", "Rats are mammals."],
-    ])
-
-    pipeline = Pipeline(
-        steps = [("multicolumnvectorizer", mctiv)]
+    corpus = np.array(
+        [
+            ["Cats eat rats.", "Rats are mammals."],
+            ["Dogs chase cats.", "Rats are mammals."],
+            ["People like dogs.", "Rats are mammals."],
+            ["People hate rats.", "Rats are mammals."],
+        ]
     )
+
+    pipeline = Pipeline(steps=[("multicolumnvectorizer", mctiv)])
 
     column_transformer = ColumnTransformer(transformers=[("text_processing", pipeline, [0, 1])])
     column_transformer.fit(corpus)
@@ -307,7 +308,7 @@ def test_automl_multicolumn_tfidifvectorizer():
 
     multivec = column_transformer.transformers_[0][1].steps[0][1]
 
-    sklearn_out = mctiv.fit_transform(corpus).toarray();
+    sklearn_out = mctiv.fit_transform(corpus).toarray()
 
     input_data = []
     for idx, sub_vec in enumerate(multivec.vectorizers_):
@@ -320,6 +321,7 @@ def test_automl_multicolumn_tfidifvectorizer():
     tvm_out = st_helper.ex.evaluate()(input_data[0], input_data[1]).asnumpy()
 
     tvm.testing.assert_allclose(sklearn_out, tvm_out, rtol=1e-5, atol=1e-5)
+
 
 def test_feature_union():
     st_helper = SklearnTestHelper()

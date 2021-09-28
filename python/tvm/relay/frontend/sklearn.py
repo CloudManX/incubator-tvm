@@ -144,18 +144,24 @@ def _Pipeline(op, inexpr, dshape, dtype, func_name, columns=None):
             columns = None
     return inexpr
 
+
 def _MultiColumn(op, inexpr, dshape, dtype, func_name, columns=None):
     """
     Scikit-Learn Pipeline:
     Handling of multi-column based tranforms which applied on multiple inputs (len(inexpr) > 0)
     Currently support: MultiColumnTfidfVectorizer
     """
-    assert(len(inexpr) > 0)
+    assert len(inexpr) > 0
     out = []
     for idx, sub_vec in enumerate(op.vectorizers_):
         num_features = len(sub_vec.get_feature_names())
-        out.append(sklearn_op_to_relay(sub_vec, inexpr[idx], (dshape[0], num_features), dtype, func_name, columns))
-    return _op.concatenate(out, axis=1) 
+        out.append(
+            sklearn_op_to_relay(
+                sub_vec, inexpr[idx], (dshape[0], num_features), dtype, func_name, columns
+            )
+        )
+    return _op.concatenate(out, axis=1)
+
 
 def _ColumnTransformer(op, inexpr, dshape, dtype, func_name, columns=None):
     """
@@ -621,11 +627,12 @@ _convert_map = {
     "Pipeline": {"transform": _Pipeline},
 }
 
+
 class Category(IntEnum):
-   INPUT_FLOAT = 0
-   INPUT_STRING = 1
-   INPUT_DATETIME = 2
-   INPUT_TEXT = 3
+    INPUT_FLOAT = 0
+    INPUT_STRING = 1
+    INPUT_DATETIME = 2
+    INPUT_TEXT = 3
 
 
 column_transformer_op_types = {
@@ -636,7 +643,7 @@ column_transformer_op_types = {
     "RobustOrdinalEncoder": Category.INPUT_STRING,
     "ThresholdOneHotEncoder": Category.INPUT_STRING,
     "DateTimeVectorizer": Category.INPUT_DATETIME,
-    "MultiColumnTfidfVectorizer": Category.INPUT_TEXT
+    "MultiColumnTfidfVectorizer": Category.INPUT_TEXT,
 }
 
 
@@ -714,11 +721,13 @@ def from_auto_ml(model, shape=None, dtype="float32", func_name="transform"):
                 multivec = transformer.steps[0][1]
                 for idx, sub_vec in enumerate(multivec.vectorizers_):
                     num_features = len(sub_vec.get_feature_names())
-                    inexpr_texts.append(_expr.var(
-                        "input_text{}".format(idx), shape=(shape[0], num_features), dtype=dtype
-                    ))
+                    inexpr_texts.append(
+                        _expr.var(
+                            "input_text{}".format(idx), shape=(shape[0], num_features), dtype=dtype
+                        )
+                    )
 
-        inexpr.append(inexpr_datetime) # Padding None if inexpr_datetime is empty 
+        inexpr.append(inexpr_datetime)  # Padding None if inexpr_datetime is empty
 
         for inexpr_text in inexpr_texts:
             inexpr.append(inexpr_text)
